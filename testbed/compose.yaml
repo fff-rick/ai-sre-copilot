@@ -1,0 +1,218 @@
+name: ai-sre-testbed
+
+x-testbed-service: &testbed-service
+  build:
+    context: .
+  environment: &testbed-environment
+    LISTEN_ADDRESS: ":8080"
+    SERVICE_VERSION: "1.0.0"
+    OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+    OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+    OTEL_METRIC_EXPORT_INTERVAL: "5000"
+  volumes:
+    - testbed-logs:/var/log/testbed
+  deploy:
+    resources:
+      limits:
+        cpus: "0.50"
+        memory: 192M
+  restart: unless-stopped
+
+services:
+  log-init:
+    image: alpine:3.23
+    command: ["sh", "-c", "chown -R 10001:10001 /var/log/testbed && chmod 0755 /var/log/testbed"]
+    volumes:
+      - testbed-logs:/var/log/testbed
+    restart: "no"
+
+  database:
+    image: postgres:18.6-alpine
+    environment:
+      POSTGRES_DB: testbed
+      POSTGRES_USER: testbed
+      POSTGRES_PASSWORD: testbed-local-only
+    volumes:
+      - testbed-db:/var/lib/postgresql
+      - ./deploy/postgres/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U testbed -d testbed"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  inventory:
+    <<: *testbed-service
+    environment:
+      <<: *testbed-environment
+      SERVICE_NAME: inventory
+      DATABASE_URL: postgresql://testbed:testbed-local-only@database:5432/testbed?pool_max_conns=2&pool_min_conns=2
+      TESTBED_LOG_PATH: /var/log/testbed/inventory.jsonl
+    depends_on:
+      log-init:
+        condition: service_completed_successfully
+      database:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/health/ready"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  payment:
+    <<: *testbed-service
+    environment:
+      <<: *testbed-environment
+      SERVICE_NAME: payment
+      TESTBED_LOG_PATH: /var/log/testbed/payment.jsonl
+    depends_on:
+      log-init:
+        condition: service_completed_successfully
+      otel-collector:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/health/ready"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  order:
+    <<: *testbed-service
+    environment:
+      <<: *testbed-environment
+      SERVICE_NAME: order
+      INVENTORY_URL: http://inventory:8080
+      PAYMENT_URL: http://payment:8080
+      TESTBED_LOG_PATH: /var/log/testbed/order.jsonl
+    depends_on:
+      log-init:
+        condition: service_completed_successfully
+      inventory:
+        condition: service_healthy
+      payment:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/health/ready"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  api:
+    <<: *testbed-service
+    environment:
+      <<: *testbed-environment
+      SERVICE_NAME: api
+      ORDER_URL: http://order:8080
+      TESTBED_LOG_PATH: /var/log/testbed/api.jsonl
+    ports:
+      - "18080:8080"
+    depends_on:
+      log-init:
+        condition: service_completed_successfully
+      order:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/health/ready"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.153.0
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./observability/otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+      - testbed-logs:/var/log/testbed:ro
+    ports:
+      - "14317:4317"
+      - "14318:4318"
+      - "13133:13133"
+    depends_on:
+      loki:
+        condition: service_started
+      tempo:
+        condition: service_started
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    command: ["--config.file=/etc/prometheus/prometheus.yaml", "--storage.tsdb.path=/prometheus"]
+    volumes:
+      - ./observability/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "19090:9090"
+    depends_on:
+      otel-collector:
+        condition: service_started
+      cadvisor:
+        condition: service_started
+    restart: unless-stopped
+
+  cadvisor:
+    image: ghcr.io/google/cadvisor:v0.60.5
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=2s
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.7.4
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - ./observability/loki.yaml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    ports:
+      - "13100:3100"
+    restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:2.10.7
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./observability/tempo.yaml:/etc/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    ports:
+      - "13200:3200"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:13.1.0
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "13000:3000"
+    depends_on:
+      prometheus:
+        condition: service_started
+      loki:
+        condition: service_started
+      tempo:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  grafana-data:
+  loki-data:
+  prometheus-data:
+  tempo-data:
+  testbed-db:
+  testbed-logs:

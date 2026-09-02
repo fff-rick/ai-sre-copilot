@@ -1,0 +1,29 @@
+schema_version: 1
+id: GT-S1-007
+family: configuration
+title: Order uses an invalid payment route configuration
+target_service: order
+fault:
+  type: configuration_error
+  duration_seconds: 120
+  config_key: payment_path
+  config_value: /charge-v2
+trigger:
+  method: POST
+  url: http://localhost:18080/checkout
+  body:
+    sku: widget-blue
+    quantity: 1
+    amount_cents: 1299
+ground_truth:
+  root_cause: order payment_path is changed from /charge to the nonexistent /charge-v2 route
+  affected_services: [order, payment, api]
+  unaffected_services: [inventory, database]
+  required_evidence:
+    - activation and request logs contain config_key payment_path and config_value /charge-v2
+    - payment returns HTTP 404 for /charge-v2
+    - the failure begins at the recorded configuration activation time
+  forbidden_conclusions:
+    - the payment process is unavailable
+    - inventory or PostgreSQL caused the failure
+

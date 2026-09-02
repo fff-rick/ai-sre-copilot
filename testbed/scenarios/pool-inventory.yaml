@@ -1,0 +1,29 @@
+schema_version: 1
+id: GT-S1-005
+family: database
+title: Inventory PostgreSQL connection pool exhaustion
+target_service: inventory
+fault:
+  type: connection_pool
+  duration_seconds: 120
+  pool_wait_ms: 2500
+  pool_max_connections: 2
+trigger:
+  method: POST
+  url: http://localhost:18080/checkout
+  body:
+    sku: widget-blue
+    quantity: 1
+    amount_cents: 1299
+ground_truth:
+  root_cause: inventory acquires both pgxpool connections before attempting one additional bounded acquire
+  affected_services: [inventory, order, api]
+  unaffected_services: [payment]
+  required_evidence:
+    - inventory logs show pool_acquired equal to pool_max and an acquire deadline
+    - testbed_db_pool_exhaustions_total increases
+    - the database span reports database connection pool exhausted
+  forbidden_conclusions:
+    - PostgreSQL itself is unavailable
+    - the inventory SQL query is slow
+

@@ -1,0 +1,29 @@
+schema_version: 1
+id: GT-S1-008
+family: release
+title: Payment 1.1.0 release regression
+target_service: payment
+fault:
+  type: release_regression
+  duration_seconds: 120
+  previous_version: 1.0.0
+  release_version: 1.1.0
+  trigger_sku: widget-red
+trigger:
+  method: POST
+  url: http://localhost:18080/checkout
+  body:
+    sku: widget-red
+    quantity: 1
+    amount_cents: 1299
+ground_truth:
+  root_cause: payment release 1.1.0 introduces an input-scoped regression for widget-red
+  affected_services: [payment, order, api]
+  unaffected_services: [inventory, database]
+  required_evidence:
+    - payment logs correlate previous_version 1.0.0 and release_version 1.1.0 with GT-S1-008
+    - widget-red returns a payment failure while widget-blue remains successful
+    - the failure begins at the recorded release activation time
+  forbidden_conclusions:
+    - all payment requests fail
+    - the regression existed in version 1.0.0

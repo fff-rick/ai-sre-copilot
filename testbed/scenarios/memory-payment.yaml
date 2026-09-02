@@ -1,0 +1,25 @@
+schema_version: 1
+id: GT-S1-004
+family: resource_memory
+title: Payment service bounded memory pressure
+target_service: payment
+fault:
+  type: memory_pressure
+  duration_seconds: 120
+  memory_megabytes: 64
+limits:
+  container_memory_megabytes: 192
+trigger:
+  command: ./testbed/scripts/fault.sh inject memory-payment
+ground_truth:
+  root_cause: payment intentionally retains and touches a bounded 64 MiB allocation
+  affected_services: [payment]
+  unaffected_services: [inventory, database]
+  required_evidence:
+    - cAdvisor container_memory_working_set_bytes rises for the payment Compose service
+    - testbed_fault_memory_allocated_bytes reports 67108864 for payment
+    - payment logs contain GT-S1-004 and the bounded expiration time
+  forbidden_conclusions:
+    - the testbed experienced an OOM kill
+    - an unbounded application memory leak occurred
+

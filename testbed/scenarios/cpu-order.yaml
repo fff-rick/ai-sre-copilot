@@ -1,0 +1,25 @@
+schema_version: 1
+id: GT-S1-003
+family: resource_cpu
+title: Order service CPU saturation
+target_service: order
+fault:
+  type: cpu_saturation
+  duration_seconds: 120
+  cpu_workers: 2
+limits:
+  container_cpus: 0.50
+trigger:
+  command: ./testbed/scripts/fault.sh inject cpu-order
+ground_truth:
+  root_cause: two bounded busy workers saturate the order container CPU quota
+  affected_services: [order]
+  unaffected_services: [inventory, payment, database]
+  required_evidence:
+    - cAdvisor container_cpu_usage_seconds_total rate rises for the order Compose service
+    - testbed_fault_cpu_workers reports 2 for order with fault_type cpu_saturation
+    - order logs contain GT-S1-003 and the bounded expiration time
+  forbidden_conclusions:
+    - PostgreSQL query latency is the source of CPU consumption
+    - payment failures caused the saturation
+

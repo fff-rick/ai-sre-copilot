@@ -1,0 +1,28 @@
+schema_version: 1
+id: GT-S1-001
+family: latency
+title: Inventory service latency
+target_service: inventory
+fault:
+  type: latency
+  duration_seconds: 120
+  latency_ms: 2500
+trigger:
+  method: POST
+  url: http://localhost:18080/checkout
+  body:
+    sku: widget-blue
+    quantity: 1
+    amount_cents: 1299
+ground_truth:
+  root_cause: inventory request handler has a bounded injected 2500 ms delay
+  affected_services: [inventory, order, api]
+  unaffected_services: [payment]
+  required_evidence:
+    - inventory HTTP server duration increases by approximately 2500 ms
+    - the distributed trace spends most of its time in the inventory server span
+    - inventory logs contain fault activated and the same trace_id as request logs
+  forbidden_conclusions:
+    - PostgreSQL is the source of the delay
+    - payment is the source of the delay
+

@@ -1,0 +1,28 @@
+schema_version: 1
+id: GT-S1-006
+family: dependency_unavailable
+title: Order cannot reach payment dependency
+target_service: order
+fault:
+  type: dependency_unavailable
+  duration_seconds: 120
+  dependency: payment
+trigger:
+  method: POST
+  url: http://localhost:18080/checkout
+  body:
+    sku: widget-blue
+    quantity: 1
+    amount_cents: 1299
+ground_truth:
+  root_cause: order routes the payment call to a closed local port to produce a real connection refusal
+  affected_services: [order, api]
+  unaffected_services: [payment, inventory, database]
+  required_evidence:
+    - order logs contain injected dependency unavailable and dependency payment
+    - the payment client span records a connection error
+    - API returns HTTP 502 while payment receives no charge request
+  forbidden_conclusions:
+    - payment returned an application 5xx
+    - DNS resolution failed
+

@@ -1,0 +1,28 @@
+schema_version: 1
+id: GT-S1-002
+family: error_rate
+title: Payment service deterministic failures
+target_service: payment
+fault:
+  type: error_rate
+  duration_seconds: 120
+  error_rate_percent: 100
+trigger:
+  method: POST
+  url: http://localhost:18080/checkout
+  body:
+    sku: widget-red
+    quantity: 2
+    amount_cents: 2598
+ground_truth:
+  root_cause: payment handler rejects every request through the test fault manager
+  affected_services: [payment, order, api]
+  unaffected_services: [inventory, database]
+  required_evidence:
+    - payment returns HTTP 503 with fault_injected
+    - order returns a payment unavailable error and API returns HTTP 502
+    - payment logs contain injected fault interrupted request with a trace_id
+  forbidden_conclusions:
+    - inventory shortage caused the checkout failure
+    - PostgreSQL caused the checkout failure
+
