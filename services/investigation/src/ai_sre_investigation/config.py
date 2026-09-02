@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     database_url: str | None = Field(default=None, repr=False)
     tool_gateway_target: str = "tool-gateway:9091"
     tool_gateway_token: str | None = Field(default=None, repr=False)
+    model_base_url: str | None = None
+    model_api_key: str | None = Field(default=None, repr=False)
+    model_id: str | None = None
+    model_timeout_seconds: float = Field(default=60, gt=0, le=300)
 
 
 @lru_cache

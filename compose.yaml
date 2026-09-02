@@ -27,6 +27,9 @@ services:
       AI_SRE_DATABASE_URL: postgresql://${POSTGRES_USER:-ai_sre}:${POSTGRES_PASSWORD:-local-development-only}@postgres:5432/${POSTGRES_DB:-ai_sre}
       AI_SRE_TOOL_GATEWAY_TARGET: tool-gateway:9091
       AI_SRE_TOOL_GATEWAY_TOKEN: ${GATEWAY_AUTH_TOKEN:-local-development-token}
+      AI_SRE_MODEL_BASE_URL: ${AI_SRE_MODEL_BASE_URL:-}
+      AI_SRE_MODEL_API_KEY: ${AI_SRE_MODEL_API_KEY:-}
+      AI_SRE_MODEL_ID: ${AI_SRE_MODEL_ID:-}
     ports:
       - "${INVESTIGATION_PORT:-8000}:8000"
     depends_on:

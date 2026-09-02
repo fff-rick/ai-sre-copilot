@@ -45,6 +45,35 @@ jobs:
       - run: uv run pytest
       - run: uv build
 
+  stage3-recovery:
+    name: Stage 3 recovery
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.6-pg18
+        env:
+          POSTGRES_DB: ai_sre
+          POSTGRES_USER: ai_sre
+          POSTGRES_PASSWORD: local-development-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ai_sre -d ai_sre"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.12.9"
+          enable-cache: true
+      - run: uv sync --project services/investigation --frozen --all-groups
+      - run: cd services/investigation && uv run ruff format --check ../../scripts/verify-stage3.py ../../evals/run_stage3.py
+      - run: cd services/investigation && uv run ruff check ../../scripts/verify-stage3.py ../../evals/run_stage3.py
+      - run: make test-stage3-restart
+      - run: make eval-offline
+
   go:
     name: Go
     runs-on: ubuntu-latest

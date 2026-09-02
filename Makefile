@@ -2,7 +2,7 @@ SHELL := /bin/bash
 
 .DEFAULT_GOAL := help
 
-.PHONY: help bootstrap proto proto-check format lint test test-python test-go test-web test-testbed test-integration test-kind acceptance-stage2 build compose-up compose-down compose-config testbed-up testbed-down testbed-smoke testbed-validate clean
+.PHONY: help bootstrap proto proto-check format lint test test-python test-go test-web test-testbed test-integration test-kind test-stage3-restart eval-offline eval-online acceptance-stage2 acceptance-stage3 build compose-up compose-down compose-config testbed-up testbed-down testbed-smoke testbed-validate clean
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\n"} /^[a-zA-Z_-]+:.*?## / {printf "  %-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -53,6 +53,18 @@ test-kind: ## Run Kubernetes connector acceptance in an ephemeral kind cluster
 	./scripts/verify-stage2-kind.sh
 
 acceptance-stage2: testbed-up testbed-smoke test lint build compose-config test-integration test-kind ## Run the complete stage-2 gate
+
+test-stage3-restart: ## Verify Python restart recovery with PostgreSQL checkpoints
+	cd services/investigation && uv run ../../scripts/verify-stage3.py
+
+eval-offline: ## Run the five-case stage-3 Fake Model evaluation
+	cd services/investigation && uv run ../../evals/run_stage3.py --mode fake
+
+eval-online: ## Run the five-case stage-3 real-model evaluation (requires model env vars)
+	mkdir -p artifacts
+	cd services/investigation && uv run ../../evals/run_stage3.py --mode online --output ../../artifacts/stage3-online.json
+
+acceptance-stage3: test lint test-stage3-restart eval-offline build compose-config ## Run the deterministic stage-3 gate
 
 build: ## Build all three services
 	cd services/investigation && uv build

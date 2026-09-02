@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "dataset_id": "stage3-smoke-v2",
+  "cases": [
+    {
+      "id": "GT-S1-001",
+      "service": "inventory",
+      "summary": "Inventory latency is above the SLO.",
+      "root_cause": "A bounded 2500 ms delay was injected into the inventory request handler.",
+      "match_groups": [
+        ["inventory"],
+        ["2500", "2.5", "delay", "latency", "slow"]
+      ],
+      "tools": {
+        "prometheus.query": {"p95_ms": 2521, "service": "inventory"},
+        "loki.query_range": {"messages": ["fault activated latency_ms=2500 case=GT-S1-001"]},
+        "tempo.search_traces": {"slowest_span": "inventory HTTP server", "duration_ms": 2512},
+        "releases.list": {"events": []}
+      }
+    },
+    {
+      "id": "GT-S1-002",
+      "service": "payment",
+      "summary": "Payment error rate is 100 percent.",
+      "root_cause": "The payment fault manager rejects every request with an injected HTTP 503.",
+      "match_groups": [
+        ["payment"],
+        ["503", "fault", "reject", "fail"]
+      ],
+      "tools": {
+        "prometheus.query": {"http_503_rate": 1.0, "service": "payment"},
+        "loki.query_range": {"messages": ["fault_injected interrupted request case=GT-S1-002"]},
+        "tempo.search_traces": {"payment_status": 503, "order_status": 502},
+        "releases.list": {"events": []}
+      }
+    },
+    {
+      "id": "GT-S1-003",
+      "service": "order",
+      "summary": "Order CPU utilization is saturated.",
+      "root_cause": "Two bounded busy workers saturate the order container CPU quota.",
+      "match_groups": [
+        ["cpu"],
+        ["two", "2 ", "busy", "worker", "saturat"]
+      ],
+      "tools": {
+        "prometheus.query": {"cpu_cores": 0.5, "fault_cpu_workers": 2},
+        "loki.query_range": {"messages": ["cpu_saturation workers=2 case=GT-S1-003"]},
+        "tempo.search_traces": {"slow_service": "order"},
+        "releases.list": {"events": []}
+      }
+    },
+    {
+      "id": "GT-S1-006",
+      "service": "order",
+      "summary": "Order cannot call the payment dependency.",
+      "root_cause": "Order routes payment calls to a closed local port, causing connection refusal.",
+      "match_groups": [
+        ["payment"],
+        ["closed port", "refus", "unreachable", "connection error"]
+      ],
+      "tools": {
+        "prometheus.query": {"order_http_502_rate": 1.0, "payment_requests": 0},
+        "loki.query_range": {"messages": ["dependency payment connection refused case=GT-S1-006"]},
+        "tempo.search_traces": {"payment_client_error": "connection refused"},
+        "releases.list": {"events": []}
+      }
+    },
+    {
+      "id": "GT-S1-008",
+      "service": "payment",
+      "summary": "Widget-red payments regressed after a release.",
+      "root_cause": "Payment release 1.1.0 introduced an input-scoped regression for widget-red.",
+      "match_groups": [
+        ["1.1.0"],
+        ["widget-red", "widget red"],
+        ["regress", "release"]
+      ],
+      "tools": {
+        "prometheus.query": {"widget_red_failures": 12, "widget_blue_failures": 0},
+        "loki.query_range": {"messages": ["release regression widget-red case=GT-S1-008"]},
+        "tempo.search_traces": {"failed_input": "widget-red", "successful_input": "widget-blue"},
+        "releases.list": {"previous_version": "1.0.0", "release_version": "1.1.0"}
+      }
+    }
+  ]
+}

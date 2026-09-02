@@ -14,6 +14,8 @@ class ModelRequest(BaseModel):
     system_instructions: str = Field(min_length=1, max_length=20_000)
     input_text: str = Field(min_length=1, max_length=100_000)
     response_schema: str = Field(min_length=1, max_length=200)
+    response_json_schema: dict[str, Any] | None = None
+    max_output_tokens: int = Field(default=4_096, ge=1, le=200_000)
 
 
 class ModelResponse(BaseModel):
