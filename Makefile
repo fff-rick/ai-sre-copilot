@@ -2,7 +2,7 @@ SHELL := /bin/bash
 
 .DEFAULT_GOAL := help
 
-.PHONY: help bootstrap format lint test test-python test-go test-web test-testbed build compose-up compose-down compose-config testbed-up testbed-down testbed-smoke testbed-validate clean
+.PHONY: help bootstrap proto proto-check format lint test test-python test-go test-web test-testbed test-integration test-kind acceptance-stage2 build compose-up compose-down compose-config testbed-up testbed-down testbed-smoke testbed-validate clean
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\n"} /^[a-zA-Z_-]+:.*?## / {printf "  %-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -10,6 +10,12 @@ help: ## Show available commands
 bootstrap: ## Install locked local dependencies
 	uv sync --project services/investigation --all-groups
 	pnpm --dir web install --frozen-lockfile
+
+proto: ## Regenerate Go and Python gRPC contracts
+	./scripts/generate-proto.sh
+
+proto-check: proto ## Fail when committed generated contracts have drifted
+	git diff --exit-code -- services/tool-gateway/gen services/investigation/src/ai_sre_investigation/generated
 
 format: ## Format all source code
 	cd services/investigation && uv run ruff format .
@@ -39,6 +45,14 @@ test-web: ## Run web tests
 
 test-testbed: ## Run observable testbed tests
 	cd testbed && go test -race ./...
+
+test-integration: ## Run the Python-Go gateway contract against the live testbed
+	./scripts/verify-stage2.sh
+
+test-kind: ## Run Kubernetes connector acceptance in an ephemeral kind cluster
+	./scripts/verify-stage2-kind.sh
+
+acceptance-stage2: testbed-up testbed-smoke test lint build compose-config test-integration test-kind ## Run the complete stage-2 gate
 
 build: ## Build all three services
 	cd services/investigation && uv build

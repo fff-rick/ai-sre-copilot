@@ -25,6 +25,8 @@ services:
     environment:
       AI_SRE_ENVIRONMENT: local
       AI_SRE_DATABASE_URL: postgresql://${POSTGRES_USER:-ai_sre}:${POSTGRES_PASSWORD:-local-development-only}@postgres:5432/${POSTGRES_DB:-ai_sre}
+      AI_SRE_TOOL_GATEWAY_TARGET: tool-gateway:9091
+      AI_SRE_TOOL_GATEWAY_TOKEN: ${GATEWAY_AUTH_TOKEN:-local-development-token}
     ports:
       - "${INVESTIGATION_PORT:-8000}:8000"
     depends_on:
@@ -42,8 +44,22 @@ services:
       context: ./services/tool-gateway
     environment:
       SERVER_ADDRESS: ":8081"
+      GRPC_ADDRESS: ":9091"
+      GATEWAY_AUTH_TOKEN: ${GATEWAY_AUTH_TOKEN:-local-development-token}
+      PROMETHEUS_URL: http://host.docker.internal:19090
+      LOKI_URL: http://host.docker.internal:13100
+      TEMPO_URL: http://host.docker.internal:13200
+      RELEASE_EVENTS_FILE: /workspace/testbed/artifacts/fault-events/events.jsonl
+      GIT_REPOSITORY_PATH: /workspace
+      ARTIFACT_DIRECTORY: /var/lib/ai-sre/artifacts
     ports:
       - "${TOOL_GATEWAY_PORT:-8081}:8081"
+      - "${TOOL_GATEWAY_GRPC_PORT:-9091}:9091"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./:/workspace:ro
+      - tool-artifacts:/var/lib/ai-sre/artifacts
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8081/health/ready"]
       interval: 3s
@@ -70,3 +86,4 @@ services:
 
 volumes:
   postgres-data:
+  tool-artifacts:

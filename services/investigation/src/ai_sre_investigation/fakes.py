@@ -39,6 +39,7 @@ class FakeToolClient:
         if request.tool_name not in self._responses:
             raise LookupError(f"unregistered fake tool: {request.tool_name}")
         return ToolResponse(
+            tool_name=request.tool_name,
             data=self._responses[request.tool_name],
             source_ref=f"fake://{request.tool_name}",
         )

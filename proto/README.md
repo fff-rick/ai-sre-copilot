@@ -1,11 +1,11 @@
 # Protobuf contracts
 
-阶段 0 只冻结服务职责和错误分类，不提前猜测工具参数。阶段 2 将在此目录定义版本化的 Tool Gateway gRPC 契约、Buf lint/生成配置和兼容性门禁。
+`ai/sre/toolgateway/v1/tool_gateway.proto` 定义 Python 调查平面到 Go
+工具网关的版本化只读契约。八个工具分别使用独立参数消息和固定 RPC，不存在动态工具注册、任意 URL 或命令执行入口。
 
 契约必须遵守以下约束：
 
 - 每类工具使用独立参数消息，不接受任意 Shell、SQL 或动态代码。
 - 请求传播 investigation ID、trace ID、调用者身份和 deadline。
-- 变更操作绑定审批、目标、参数哈希和幂等键。
+- 变更操作必须在未来通过独立服务绑定审批、目标、参数哈希和幂等键。
 - 删除字段时保留字段号和名称。
-

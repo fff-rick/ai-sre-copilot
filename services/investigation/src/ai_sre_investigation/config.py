@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     service_name: str = "investigation-service"
     environment: str = "development"
     database_url: str | None = Field(default=None, repr=False)
+    tool_gateway_target: str = "tool-gateway:9091"
+    tool_gateway_token: str | None = Field(default=None, repr=False)
 
 
 @lru_cache

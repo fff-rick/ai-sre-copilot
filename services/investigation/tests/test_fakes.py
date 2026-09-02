@@ -24,6 +24,7 @@ def test_fake_tool_rejects_unregistered_tools() -> None:
     client = FakeToolClient({})
     request = ToolRequest(
         investigation_id="inv-1",
+        trace_id="0123456789abcdef",
         tool_name="prometheus.query",
         arguments={"query": "up"},
     )
@@ -36,6 +37,7 @@ def test_fake_tool_returns_registered_fixture() -> None:
     client = FakeToolClient({"prometheus.query": {"value": 1}})
     request = ToolRequest(
         investigation_id="inv-1",
+        trace_id="0123456789abcdef",
         tool_name="prometheus.query",
         arguments={"query": "up"},
     )
@@ -43,4 +45,5 @@ def test_fake_tool_returns_registered_fixture() -> None:
     response = asyncio.run(client.execute_read(request))
 
     assert response.data == {"value": 1}
+    assert response.tool_name == "prometheus.query"
     assert response.source_ref == "fake://prometheus.query"

@@ -1,0 +1,3 @@
+[run]
+omit =
+    src/ai_sre_investigation/generated/*
