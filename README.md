@@ -2,7 +2,7 @@
 
 AI-SRE Copilot 是一个面向中小研发团队的智能故障调查与安全处置系统。它从告警出发，关联指标、日志、链路、Kubernetes 事件、发布记录和历史事故，输出带证据的根因假设、处置建议与复盘报告。
 
-项目已完成阶段 0 工程基线和阶段 1 可观测测试环境，下一步进入阶段 2（Go 只读工具网关）。V1 聚焦“调查正确、证据可查、安全可控”，不追求无人值守自愈。
+项目已完成阶段 0 工程基线、阶段 1 可观测测试环境和阶段 2 Go 只读工具网关，下一步进入阶段 3（Python 调查工作流）。V1 聚焦“调查正确、证据可查、安全可控”，不追求无人值守自愈。
 
 ## 核心原则
 
@@ -41,6 +41,7 @@ Observable Testbed
 6. [验收测试](docs/06-acceptance-tests.md)
 7. [工程基线](docs/07-engineering-baseline.md)
 8. [阶段 1 验收记录](docs/08-stage1-validation.md)
+9. [阶段 2 验收记录](docs/09-stage2-validation.md)
 
 ## 当前可运行基线
 
@@ -71,8 +72,17 @@ make compose-up
 - Web：<http://localhost:5173>
 - Investigation 健康检查：<http://localhost:8000/health/ready>
 - Tool Gateway 健康检查：<http://localhost:8081/health/ready>
+- Tool Gateway gRPC：`localhost:9091`
 
-`make compose-down` 会停止服务但保留本地数据库卷。当前阶段没有任何真实运维凭据、模型调用或变更工具。
+`make compose-down` 会停止服务但保留本地数据库卷和脱敏 Artifact。当前阶段没有任何真实生产凭据、模型调用或变更工具。
+
+阶段 2 的完整本地门禁为：
+
+```bash
+make acceptance-stage2
+```
+
+其中常规 PR 使用 Fake client-go 验证 Kubernetes 契约；阶段验收另使用临时 kind 集群验证真实 API Server，结束后删除集群。
 
 阶段 1 的可观测测试床使用独立 Compose 项目，避免拖慢日常工程基线：
 

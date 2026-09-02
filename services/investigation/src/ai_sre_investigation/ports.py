@@ -39,8 +39,19 @@ class ToolRequest(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     investigation_id: str = Field(min_length=1, max_length=255)
+    trace_id: str = Field(min_length=1, max_length=128)
     tool_name: str = Field(pattern=r"^[a-z][a-z0-9_.-]{1,99}$")
     arguments: Mapping[str, Any]
+
+
+class ArtifactReference(BaseModel):
+    """Immutable reference to a gateway-owned oversized result."""
+
+    model_config = ConfigDict(frozen=True)
+
+    uri: str
+    sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    size_bytes: int = Field(ge=0)
 
 
 class ToolResponse(BaseModel):
@@ -48,8 +59,11 @@ class ToolResponse(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    data: Mapping[str, Any]
+    tool_name: str
+    data: Mapping[str, Any] | list[Any] | None
     source_ref: str
+    artifact: ArtifactReference | None = None
+    redacted: bool = False
 
 
 class ToolClient(Protocol):

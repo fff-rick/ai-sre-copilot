@@ -1,0 +1,156 @@
+syntax = "proto3";
+
+package ai.sre.toolgateway.v1;
+
+option go_package = "ai-sre-copilot.local/tool-gateway/gen/ai/sre/toolgateway/v1;toolgatewayv1";
+
+import "google/protobuf/timestamp.proto";
+
+// ToolGatewayV1 is a fixed, read-only RPC surface. Mutation requires a
+// separately reviewed service boundary.
+service ToolGatewayV1 {
+  rpc ListTools(ListToolsRequest) returns (ListToolsResponse);
+  rpc QueryPrometheus(QueryPrometheusRequest) returns (ReadToolResponse);
+  rpc QueryLoki(QueryLokiRequest) returns (ReadToolResponse);
+  rpc GetTempoTrace(GetTempoTraceRequest) returns (ReadToolResponse);
+  rpc SearchTempoTraces(SearchTempoTracesRequest) returns (ReadToolResponse);
+  rpc ListReleases(ListReleasesRequest) returns (ReadToolResponse);
+  rpc GetGitCommit(GetGitCommitRequest) returns (ReadToolResponse);
+  rpc GetKubernetesWorkload(GetKubernetesWorkloadRequest) returns (ReadToolResponse);
+  rpc ListKubernetesEvents(ListKubernetesEventsRequest) returns (ReadToolResponse);
+}
+
+message CallerIdentity {
+  string actor_id = 1;
+  string role = 2;
+}
+
+message RequestContext {
+  string investigation_id = 1;
+  string trace_id = 2;
+  CallerIdentity caller = 3;
+}
+
+message ListToolsRequest { RequestContext context = 1; }
+
+message ToolDescriptor {
+  string name = 1;
+  string version = 2;
+  string description = 3;
+}
+
+message ListToolsResponse { repeated ToolDescriptor tools = 1; }
+
+message QueryPrometheusArgs {
+  string promql = 1;
+  google.protobuf.Timestamp at = 2;
+}
+message QueryPrometheusRequest {
+  RequestContext context = 1;
+  QueryPrometheusArgs args = 2;
+}
+
+message QueryLokiArgs {
+  string logql = 1;
+  google.protobuf.Timestamp start = 2;
+  google.protobuf.Timestamp end = 3;
+  uint32 limit = 4;
+  string direction = 5;
+}
+message QueryLokiRequest {
+  RequestContext context = 1;
+  QueryLokiArgs args = 2;
+}
+
+message GetTempoTraceArgs { string trace_id = 1; }
+message GetTempoTraceRequest {
+  RequestContext context = 1;
+  GetTempoTraceArgs args = 2;
+}
+
+message SearchTempoTracesArgs {
+  string traceql = 1;
+  google.protobuf.Timestamp start = 2;
+  google.protobuf.Timestamp end = 3;
+  uint32 limit = 4;
+}
+message SearchTempoTracesRequest {
+  RequestContext context = 1;
+  SearchTempoTracesArgs args = 2;
+}
+
+message ListReleasesArgs {
+  string service = 1;
+  google.protobuf.Timestamp start = 2;
+  google.protobuf.Timestamp end = 3;
+  uint32 limit = 4;
+}
+message ListReleasesRequest {
+  RequestContext context = 1;
+  ListReleasesArgs args = 2;
+}
+
+message GetGitCommitArgs {
+  string revision = 1;
+  uint32 max_changed_files = 2;
+}
+message GetGitCommitRequest {
+  RequestContext context = 1;
+  GetGitCommitArgs args = 2;
+}
+
+message GetKubernetesWorkloadArgs {
+  string namespace = 1;
+  string kind = 2;
+  string name = 3;
+}
+message GetKubernetesWorkloadRequest {
+  RequestContext context = 1;
+  GetKubernetesWorkloadArgs args = 2;
+}
+
+message ListKubernetesEventsArgs {
+  string namespace = 1;
+  string involved_object_kind = 2;
+  string involved_object_name = 3;
+  uint32 limit = 4;
+}
+message ListKubernetesEventsRequest {
+  RequestContext context = 1;
+  ListKubernetesEventsArgs args = 2;
+}
+
+message ArtifactReference {
+  string uri = 1;
+  string sha256 = 2;
+  uint64 size_bytes = 3;
+}
+
+message ReadToolResponse {
+  string tool_name = 1;
+  string source_ref = 2;
+  bytes json_payload = 3;
+  ArtifactReference artifact = 4;
+  bool redacted = 5;
+}
+
+enum ToolErrorCode {
+  TOOL_ERROR_CODE_UNSPECIFIED = 0;
+  TOOL_ERROR_CODE_INVALID_ARGUMENT = 1;
+  TOOL_ERROR_CODE_UNAUTHENTICATED = 2;
+  TOOL_ERROR_CODE_PERMISSION_DENIED = 3;
+  TOOL_ERROR_CODE_RATE_LIMITED = 4;
+  TOOL_ERROR_CODE_DEADLINE_EXCEEDED = 5;
+  TOOL_ERROR_CODE_SOURCE_UNAVAILABLE = 6;
+  TOOL_ERROR_CODE_NOT_FOUND = 7;
+  TOOL_ERROR_CODE_RESPONSE_TOO_LARGE = 8;
+  TOOL_ERROR_CODE_INTERNAL = 9;
+}
+
+// ToolError is attached as a gRPC rich error detail. Its message is safe for
+// callers and never contains credentials or raw upstream response bodies.
+message ToolError {
+  ToolErrorCode code = 1;
+  string safe_message = 2;
+  bool retryable = 3;
+}

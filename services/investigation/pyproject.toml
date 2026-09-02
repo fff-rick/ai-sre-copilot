@@ -6,6 +6,9 @@ readme = "README.md"
 requires-python = ">=3.14,<3.15"
 dependencies = [
   "fastapi>=0.141,<0.142",
+  "grpcio>=1.76,<2",
+  "grpcio-status>=1.76,<2",
+  "protobuf>=6.31,<7",
   "pydantic>=2.12,<3",
   "pydantic-settings>=2.12,<3",
   "uvicorn[standard]>=0.35,<1",
@@ -13,11 +16,15 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+  "grpcio-tools>=1.76,<2",
   "httpx>=0.28,<1",
   "mypy>=1.18,<2",
   "pytest>=8.4,<10",
   "pytest-cov>=6,<8",
   "ruff>=0.12,<1",
+  "types-grpcio>=1.83.0.20260730",
+  "types-grpcio-status>=1.0.0.20260408",
+  "types-protobuf>=7.35.1.20260827",
 ]
 
 [build-system]
@@ -31,6 +38,7 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py314"
+exclude = ["src/ai_sre_investigation/generated"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC", "RUF"]
@@ -39,4 +47,4 @@ select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC", "RUF"]
 python_version = "3.14"
 strict = true
 packages = ["ai_sre_investigation"]
-
+exclude = ["src/ai_sre_investigation/generated"]
