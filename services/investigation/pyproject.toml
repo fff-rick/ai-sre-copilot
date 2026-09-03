@@ -18,6 +18,9 @@ dependencies = [
   "uvicorn[standard]>=0.35,<1",
 ]
 
+[project.scripts]
+ai-sre-ingest = "ai_sre_investigation.ingest:main"
+
 [dependency-groups]
 dev = [
   "grpcio-tools>=1.76,<2",

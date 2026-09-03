@@ -1,0 +1,69 @@
+{
+  "dataset": "stage4-retrieval-v1",
+  "cases": [
+    {
+      "id": "payment-pool-exhausted",
+      "query": "payment connection pool exhausted timeout",
+      "service": "payment",
+      "environment": "testbed",
+      "language": "en",
+      "expected_source_refs": ["repo://knowledge/runbooks/payment-database.md"]
+    },
+    {
+      "id": "payment-slow-transactions",
+      "query": "slow PostgreSQL transactions db_pool_wait_seconds",
+      "service": "payment",
+      "environment": "testbed",
+      "language": "en",
+      "expected_source_refs": ["repo://knowledge/runbooks/payment-database.md"]
+    },
+    {
+      "id": "payment-ownership",
+      "query": "payment ownership commerce-sre dependencies",
+      "service": "payment",
+      "environment": "testbed",
+      "language": "en",
+      "expected_source_refs": ["repo://knowledge/services/payment.md"]
+    },
+    {
+      "id": "payment-callback-404",
+      "query": "payment callback path 404 after deployment",
+      "service": "payment",
+      "environment": "testbed",
+      "language": "en",
+      "expected_source_refs": ["repo://knowledge/incidents/payment-release-path.md"]
+    },
+    {
+      "id": "payment-old-route",
+      "query": "upstream retained old route release regression",
+      "service": "payment",
+      "environment": "testbed",
+      "language": "en",
+      "expected_source_refs": ["repo://knowledge/incidents/payment-release-path.md"]
+    },
+    {
+      "id": "inventory-catalog-spans",
+      "query": "inventory slow Tempo spans catalog dependency",
+      "service": "inventory",
+      "environment": "testbed",
+      "language": "en",
+      "expected_source_refs": ["repo://knowledge/runbooks/inventory-latency.md"]
+    },
+    {
+      "id": "inventory-restart",
+      "query": "downstream delay restarting inventory will not fix",
+      "service": "inventory",
+      "environment": "testbed",
+      "language": "en",
+      "expected_source_refs": ["repo://knowledge/runbooks/inventory-latency.md"]
+    },
+    {
+      "id": "payment-pool-zh",
+      "query": "支付连接池耗尽与数据库超时",
+      "service": "payment",
+      "environment": "testbed",
+      "language": "zh",
+      "expected_source_refs": ["repo://knowledge/runbooks/payment-database.md"]
+    }
+  ]
+}

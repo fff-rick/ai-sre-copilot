@@ -72,16 +72,21 @@ def make_service() -> InvestigationService:
         ),
         checkpointer=InMemorySaver(),
         cancel_check=repository.is_cancel_requested,
+        event_sink=repository.append_event,
     )
     return InvestigationService(repository=repository, workflow=workflow, poll_seconds=0.01)
 
 
 async def request(
-    app: Any, method: str, path: str, json_body: dict[str, Any] | None = None
+    app: Any,
+    method: str,
+    path: str,
+    json_body: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
 ) -> httpx.Response:
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        return await client.request(method, path, json=json_body)
+        return await client.request(method, path, json=json_body, headers=headers)
 
 
 def test_investigation_api_create_get_cancel_and_not_found() -> None:
@@ -141,6 +146,76 @@ def test_worker_completes_created_investigation() -> None:
     asyncio.run(scenario())
 
 
+def test_read_model_timeline_evidence_and_sse_replay() -> None:
+    async def scenario() -> None:
+        service = make_service()
+        app = create_app(Settings(environment="test"), service)
+        async with app.router.lifespan_context(app):
+            created = await request(
+                app,
+                "POST",
+                "/api/v1/investigations",
+                {"alert": alert().model_dump(mode="json")},
+            )
+            identifier = created.json()["investigation"]["investigation_id"]
+            for _ in range(100):
+                record = await service.get(identifier)
+                if record and record.status == InvestigationStatus.COMPLETED:
+                    break
+                await asyncio.sleep(0.01)
+            else:
+                raise AssertionError("worker did not complete")
+
+            listed = await request(app, "GET", "/api/v1/investigations?limit=10")
+            assert listed.status_code == 200
+            assert listed.json()["items"][0]["investigation"]["investigation_id"] == identifier
+
+            timeline = await request(app, "GET", f"/api/v1/investigations/{identifier}/timeline")
+            event_items = timeline.json()["items"]
+            assert event_items[0]["event_type"] == "investigation.created"
+            assert event_items[-1]["event_type"] == "investigation.finished"
+
+            report = (await request(app, "GET", f"/api/v1/investigations/{identifier}")).json()[
+                "report"
+            ]
+            evidence_id = report["evidence"][0]["evidence_id"]
+            evidence = await request(
+                app,
+                "GET",
+                f"/api/v1/investigations/{identifier}/evidence/{evidence_id}",
+            )
+            assert evidence.json()["evidence"]["evidence_id"] == evidence_id
+            assert (
+                await request(
+                    app,
+                    "GET",
+                    f"/api/v1/investigations/{identifier}/evidence/ev-0000000000000000",
+                )
+            ).status_code == 404
+
+            replay = await request(
+                app,
+                "GET",
+                f"/api/v1/investigations/{identifier}/events",
+                headers={"Last-Event-ID": str(event_items[0]["event_id"])},
+            )
+            assert replay.headers["content-type"].startswith("text/event-stream")
+            assert "event: investigation" in replay.text
+            assert f"id: {event_items[0]['event_id']}" not in replay.text
+
+        assert (
+            await request(app, "GET", "/api/v1/investigations/missing/timeline")
+        ).status_code == 404
+        assert (
+            await request(app, "GET", "/api/v1/investigations/missing/evidence/ev-x")
+        ).status_code == 404
+        assert (
+            await request(app, "GET", "/api/v1/investigations/missing/events")
+        ).status_code == 404
+
+    asyncio.run(scenario())
+
+
 def test_unconfigured_runtime_rejects_durable_operations() -> None:
     async def scenario() -> None:
         app = create_app(Settings(environment="test"))
@@ -175,6 +250,15 @@ def test_memory_repository_attempts_duplicates_release_and_terminal_cancel() -> 
         with pytest.raises(ValueError, match="already exists"):
             await repository.create(item)
         assert await repository.claim_next("worker") == item
+        assert (await repository.list_investigations())[0].investigation == item
+        created_event = await repository.append_event(
+            item.investigation_id,
+            "investigation.tested",
+            InvestigationStatus.SCOPING,
+            {"ok": True},
+        )
+        assert (await repository.list_events(item.investigation_id))[0] == created_event
+        assert not await repository.list_events(item.investigation_id, created_event.event_id)
         await repository.release_claim(item.investigation_id)
         assert await repository.claim_next("worker") == item
         await repository.fail_attempt(item.investigation_id, "safe failure")

@@ -8,15 +8,24 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from ai_sre_investigation.domain import (
     Alert,
+    EvidenceReliability,
     Investigation,
     InvestigationBudget,
     Severity,
     TimeWindow,
 )
+from ai_sre_investigation.embedding_client import HashEmbeddingClient
 from ai_sre_investigation.fakes import (
     FailingFakeToolClient,
     FakeModelClient,
     FakeToolClient,
+)
+from ai_sre_investigation.knowledge import (
+    InMemoryKnowledgeRepository,
+    KnowledgeChunk,
+    KnowledgeDocument,
+    KnowledgeDocumentType,
+    KnowledgeRetriever,
 )
 from ai_sre_investigation.model_client import ModelProviderError
 from ai_sre_investigation.ports import ModelRequest, ModelResponse
@@ -247,3 +256,92 @@ def test_retryable_model_failure_is_bounded_and_reports_existing_evidence() -> N
     assert state["evidence_gaps"][-1]["source_type"] == "model"
     assert state["report"] is not None
     assert "No valid evidence-backed hypothesis" in state["report"]["uncertainty"][-1]
+
+
+def test_knowledge_retrieval_is_citable_and_nodes_emit_durable_events() -> None:
+    async def scenario() -> None:
+        embeddings = HashEmbeddingClient(16)
+        vector = (await embeddings.embed(["payment error rate runbook"]))[0]
+        digest = hashlib.sha256(b"payment error rate runbook").hexdigest()
+        repository = InMemoryKnowledgeRepository()
+        await repository.replace_document(
+            KnowledgeDocument(
+                document_id="doc-0000000000000001",
+                source_id="payment-runbook",
+                title="Payment error runbook",
+                document_type=KnowledgeDocumentType.RUNBOOK,
+                service="payment",
+                source_ref="repo://payment.md",
+                content_hash=digest,
+                imported_at=NOW,
+            ),
+            [
+                KnowledgeChunk(
+                    chunk_id="kc-0000000000000001",
+                    document_id="doc-0000000000000001",
+                    ordinal=0,
+                    content="payment error rate runbook",
+                    content_hash=digest,
+                    embedding=vector,
+                )
+            ],
+        )
+        emitted: list[tuple[str, str]] = []
+
+        async def record_event(
+            investigation_id: str, event_type: str, status: Any, payload: Any
+        ) -> object:
+            assert investigation_id == "inv-stage3"
+            assert payload["node"] in event_type
+            emitted.append((event_type, str(status)))
+            return None
+
+        model = FakeModelClient(valid_hypotheses())
+        workflow = InvestigationWorkflow(
+            model=model,
+            tools=FakeToolClient(TOOL_RESPONSES),
+            knowledge=KnowledgeRetriever(repository, embeddings),
+            event_sink=record_event,
+            now=lambda: NOW,
+        )
+        state = await workflow.run(investigation())
+
+        assert len(state["evidence"]) == 5
+        knowledge = next(
+            item for item in state["evidence"] if item["source_type"] == "knowledge.runbook"
+        )
+        assert knowledge["reliability"] == EvidenceReliability.MEDIUM
+        assert knowledge["evidence_id"] in model.requests[0].input_text
+        assert [event[0] for event in emitted] == [
+            "node.scope.completed",
+            "node.retrieve.completed",
+            "node.collect.completed",
+            "node.hypothesize.completed",
+            "node.verify.completed",
+            "node.recommend.completed",
+            "node.report.completed",
+        ]
+
+    asyncio.run(scenario())
+
+
+def test_knowledge_failure_degrades_to_an_explicit_gap() -> None:
+    class BrokenKnowledgeRepository(InMemoryKnowledgeRepository):
+        async def search(self, *args: Any, **kwargs: Any) -> Any:
+            del args, kwargs
+            raise RuntimeError("private retrieval detail")
+
+    state = run(
+        InvestigationWorkflow(
+            model=FakeModelClient(valid_hypotheses()),
+            tools=FakeToolClient(TOOL_RESPONSES),
+            knowledge=KnowledgeRetriever(BrokenKnowledgeRepository(), HashEmbeddingClient()),
+            now=lambda: NOW,
+        )
+    )
+
+    knowledge_gap = next(
+        item for item in state["evidence_gaps"] if item["source_type"] == "knowledge"
+    )
+    assert knowledge_gap["message"] == "knowledge retrieval unavailable"
+    assert "private" not in json.dumps(knowledge_gap)

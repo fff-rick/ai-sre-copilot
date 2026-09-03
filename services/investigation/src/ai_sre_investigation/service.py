@@ -6,8 +6,17 @@ from contextlib import suppress
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from ai_sre_investigation.domain import Alert, Investigation, InvestigationBudget
-from ai_sre_investigation.repository import InvestigationRepository, StoredInvestigation
+from ai_sre_investigation.domain import (
+    Alert,
+    Investigation,
+    InvestigationBudget,
+    InvestigationStatus,
+)
+from ai_sre_investigation.repository import (
+    InvestigationEvent,
+    InvestigationRepository,
+    StoredInvestigation,
+)
 from ai_sre_investigation.workflow import InvestigationWorkflow
 
 
@@ -60,6 +69,12 @@ class InvestigationService:
             updated_at=now,
         )
         await self.repository.create(investigation)
+        await self.repository.append_event(
+            investigation.investigation_id,
+            "investigation.created",
+            InvestigationStatus.RECEIVED,
+            {"alert_id": alert.alert_id, "service": alert.service},
+        )
         self._wake.set()
         record = await self.repository.get(investigation.investigation_id)
         if record is None:
@@ -68,6 +83,18 @@ class InvestigationService:
 
     async def get(self, investigation_id: str) -> StoredInvestigation | None:
         return await self.repository.get(investigation_id)
+
+    async def list_investigations(
+        self, limit: int = 50, offset: int = 0
+    ) -> list[StoredInvestigation]:
+        return await self.repository.list_investigations(limit=limit, offset=offset)
+
+    async def events(
+        self, investigation_id: str, after_event_id: int = 0, limit: int = 100
+    ) -> list[InvestigationEvent]:
+        return await self.repository.list_events(
+            investigation_id, after_event_id=after_event_id, limit=limit
+        )
 
     async def cancel(self, investigation_id: str) -> bool:
         changed = await self.repository.request_cancel(investigation_id)

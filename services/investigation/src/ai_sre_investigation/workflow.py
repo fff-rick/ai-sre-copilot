@@ -28,6 +28,13 @@ from ai_sre_investigation.domain import (
     RiskLevel,
     VerificationStatus,
 )
+from ai_sre_investigation.knowledge import (
+    KnowledgeDocumentType,
+    KnowledgeRetriever,
+    KnowledgeSearchFilter,
+    clip_excerpt,
+    deduplicate_evidence,
+)
 from ai_sre_investigation.model_client import ModelProviderError
 from ai_sre_investigation.ports import (
     ModelClient,
@@ -40,6 +47,8 @@ from ai_sre_investigation.tool_gateway_client import ToolGatewayError
 
 PROMPT_VERSION = "hypotheses-v2"
 CancelCheck = Callable[[str], Awaitable[bool]]
+EventSink = Callable[[str, str, InvestigationStatus, Mapping[str, Any]], Awaitable[object]]
+NodeHandler = Callable[["InvestigationState"], Awaitable[dict[str, Any]]]
 
 
 class InvestigationState(TypedDict, total=False):
@@ -64,6 +73,15 @@ async def never_cancel(_: str) -> bool:
     return False
 
 
+async def discard_event(
+    _investigation_id: str,
+    _event_type: str,
+    _status: InvestigationStatus,
+    _payload: Mapping[str, Any],
+) -> object:
+    return None
+
+
 class InvestigationWorkflow:
     """One explicit graph; model output never controls tools or graph edges."""
 
@@ -77,21 +95,28 @@ class InvestigationWorkflow:
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
         interrupt_after: list[str] | None = None,
         model_retry_base_seconds: float = 0.25,
+        knowledge: KnowledgeRetriever | None = None,
+        event_sink: EventSink = discard_event,
     ) -> None:
         self._model = model
         self._tools = tools
         self._cancel_check = cancel_check
         self._now = now
         self._model_retry_base_seconds = model_retry_base_seconds
+        self._knowledge = knowledge
+        self._event_sink = event_sink
         graph = StateGraph(InvestigationState)
-        graph.add_node("scope", self._scope)
-        graph.add_node("collect", self._collect)
-        graph.add_node("hypothesize", self._hypothesize)
-        graph.add_node("verify", self._verify)
-        graph.add_node("recommend", self._recommend)
-        graph.add_node("report", self._report)
+        # LangGraph's overloads do not express async closure nodes, although they are supported.
+        graph.add_node("scope", cast(Any, self._observed("scope", self._scope)))
+        graph.add_node("retrieve", cast(Any, self._observed("retrieve", self._retrieve)))
+        graph.add_node("collect", cast(Any, self._observed("collect", self._collect)))
+        graph.add_node("hypothesize", cast(Any, self._observed("hypothesize", self._hypothesize)))
+        graph.add_node("verify", cast(Any, self._observed("verify", self._verify)))
+        graph.add_node("recommend", cast(Any, self._observed("recommend", self._recommend)))
+        graph.add_node("report", cast(Any, self._observed("report", self._report)))
         graph.add_edge(START, "scope")
         graph.add_conditional_edges("scope", self._after_scope)
+        graph.add_conditional_edges("retrieve", self._after_retrieve)
         graph.add_conditional_edges("collect", self._after_collect)
         graph.add_conditional_edges("hypothesize", self._after_hypothesize)
         graph.add_conditional_edges("verify", self._after_verify)
@@ -145,6 +170,28 @@ class InvestigationWorkflow:
         elapsed = (self._now() - investigation.created_at).total_seconds()
         return elapsed >= investigation.budget.max_total_seconds
 
+    def _observed(self, node: str, handler: NodeHandler) -> NodeHandler:
+        async def observed(state: InvestigationState) -> dict[str, Any]:
+            result = await handler(state)
+            investigation = _investigation(state)
+            node_status = InvestigationStatus(result.get("status", state["status"]))
+            await self._event_sink(
+                investigation.investigation_id,
+                f"node.{node}.completed",
+                node_status,
+                {
+                    "node": node,
+                    "evidence_count": len(result.get("evidence", state.get("evidence", []))),
+                    "evidence_gap_count": len(
+                        result.get("evidence_gaps", state.get("evidence_gaps", []))
+                    ),
+                    "hypothesis_count": len(result.get("hypotheses", state.get("hypotheses", []))),
+                },
+            )
+            return result
+
+        return observed
+
     async def _scope(self, state: InvestigationState) -> dict[str, Any]:
         if await self._cancelled(state):
             return {"status": InvestigationStatus.CANCELLED}
@@ -187,6 +234,47 @@ class InvestigationWorkflow:
         ]
         return {"status": InvestigationStatus.SCOPING, "tool_plan": plan}
 
+    async def _retrieve(self, state: InvestigationState) -> dict[str, Any]:
+        if await self._cancelled(state):
+            return {"status": InvestigationStatus.CANCELLED}
+        if self._knowledge is None or self._time_exhausted(state):
+            return {"status": InvestigationStatus.SCOPING}
+        investigation = _investigation(state)
+        alert = investigation.alert
+        try:
+            evidence = await self._knowledge.retrieve(
+                f"{alert.service} {alert.summary}",
+                KnowledgeSearchFilter(
+                    service=alert.service,
+                    environment=alert.labels.get("environment"),
+                    document_types=[
+                        KnowledgeDocumentType.RUNBOOK,
+                        KnowledgeDocumentType.SERVICE,
+                        KnowledgeDocumentType.INCIDENT,
+                    ],
+                    effective_at=alert.time_window.end,
+                ),
+                limit=5,
+            )
+        except Exception as error:
+            gap = EvidenceGap(
+                source_type="knowledge",
+                error_code=type(error).__name__.upper(),
+                message="knowledge retrieval unavailable",
+                retryable=False,
+            )
+            return {
+                "status": InvestigationStatus.SCOPING,
+                "evidence_gaps": [
+                    *state.get("evidence_gaps", []),
+                    gap.model_dump(mode="json"),
+                ],
+            }
+        return {
+            "status": InvestigationStatus.SCOPING,
+            "evidence": [item.model_dump(mode="json") for item in evidence],
+        }
+
     async def _collect(self, state: InvestigationState) -> dict[str, Any]:
         if await self._cancelled(state):
             return {"status": InvestigationStatus.CANCELLED}
@@ -221,7 +309,7 @@ class InvestigationWorkflow:
                     source_ref=response.source_ref,
                     query=cast(dict[str, Any], item["arguments"]),
                     observed_at=self._now(),
-                    content_excerpt=canonical[:4_000],
+                    content_excerpt=clip_excerpt(canonical),
                     content_hash=digest,
                     structured_facts=cast(dict[str, Any] | list[Any] | None, response.data),
                     reliability=(
@@ -246,13 +334,18 @@ class InvestigationWorkflow:
                 )
 
         results = await asyncio.gather(*(execute(item) for item in selected))
-        evidence = [item.model_dump(mode="json") for item in results if isinstance(item, Evidence)]
+        collected = [item for item in results if isinstance(item, Evidence)]
+        existing = [Evidence.model_validate(item) for item in state.get("evidence", [])]
+        evidence = [
+            item.model_dump(mode="json")
+            for item in deduplicate_evidence([*existing, *collected], limit=50)
+        ]
         gaps = [item.model_dump(mode="json") for item in results if isinstance(item, EvidenceGap)]
         new_usage = usage.model_copy(update={"tool_calls": usage.tool_calls + len(selected)})
         return {
             "status": InvestigationStatus.COLLECTING,
             "evidence": evidence,
-            "evidence_gaps": gaps,
+            "evidence_gaps": [*state.get("evidence_gaps", []), *gaps],
             "usage": new_usage.model_dump(mode="json"),
             "budget_exhausted": len(selected) < len(state.get("tool_plan", [])),
         }
@@ -276,6 +369,8 @@ class InvestigationWorkflow:
         if not evidence:
             return {"status": InvestigationStatus.HYPOTHESIZING, "hypotheses": []}
 
+        context_evidence = _context_evidence(evidence)
+
         prompt_payload = {
             "alert": investigation.alert.model_dump(mode="json"),
             "evidence": [
@@ -284,7 +379,7 @@ class InvestigationWorkflow:
                     "source_type": item.source_type,
                     "content_excerpt_untrusted": item.content_excerpt,
                 }
-                for item in evidence
+                for item in context_evidence
             ],
             "previous_hypotheses": state.get("hypotheses", []),
             "verification_round": state.get("verification_round", 0),
@@ -328,7 +423,7 @@ class InvestigationWorkflow:
                 "budget_exhausted": usage.model_calls >= investigation.budget.max_model_calls,
             }
         try:
-            batch = _validate_hypotheses(response.data, evidence)
+            batch = _validate_hypotheses(response.data, context_evidence)
             repair_attempted = False
         except ValidationError as error:
             if (
@@ -393,7 +488,7 @@ class InvestigationWorkflow:
                     "budget_exhausted": usage.model_calls >= investigation.budget.max_model_calls,
                 }
             try:
-                batch = _validate_hypotheses(response.data, evidence)
+                batch = _validate_hypotheses(response.data, context_evidence)
             except ValidationError:
                 gaps = list(state.get("evidence_gaps", []))
                 gaps.append(_invalid_model_gap().model_dump(mode="json"))
@@ -542,6 +637,10 @@ class InvestigationWorkflow:
 
     @staticmethod
     def _after_scope(state: InvestigationState) -> str:
+        return END if _terminal(state) else "retrieve"
+
+    @staticmethod
+    def _after_retrieve(state: InvestigationState) -> str:
         return END if _terminal(state) else "collect"
 
     @staticmethod
@@ -631,3 +730,28 @@ def _invalid_model_gap() -> EvidenceGap:
         message="model output remained invalid after bounded validation",
         retryable=False,
     )
+
+
+def _context_evidence(evidence: list[Evidence], max_chars: int = 60_000) -> list[Evidence]:
+    """Build a bounded context while retaining the most reliable evidence first."""
+
+    priority = {
+        EvidenceReliability.HIGH: 3,
+        EvidenceReliability.MEDIUM: 2,
+        EvidenceReliability.LOW: 1,
+    }
+    ordered = sorted(
+        enumerate(evidence), key=lambda item: (-priority[item[1].reliability], item[0])
+    )
+    selected: list[Evidence] = []
+    used = 0
+    for _, item in ordered:
+        remaining = max_chars - used
+        if remaining <= 0 or len(selected) >= 20:
+            break
+        excerpt = clip_excerpt(item.content_excerpt, min(4_000, remaining))
+        if not excerpt:
+            continue
+        selected.append(item.model_copy(update={"content_excerpt": excerpt}))
+        used += len(excerpt)
+    return selected

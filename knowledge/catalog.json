@@ -1,0 +1,42 @@
+[
+  {
+    "source_id": "service-payment-v1",
+    "path": "services/payment.md",
+    "title": "Payment service ownership and dependencies",
+    "document_type": "service",
+    "service": "payment",
+    "environment": "testbed",
+    "version": "1.0",
+    "source_ref": "repo://knowledge/services/payment.md"
+  },
+  {
+    "source_id": "runbook-payment-database-v1",
+    "path": "runbooks/payment-database.md",
+    "title": "Payment database saturation runbook",
+    "document_type": "runbook",
+    "service": "payment",
+    "environment": "testbed",
+    "version": "1.0",
+    "source_ref": "repo://knowledge/runbooks/payment-database.md"
+  },
+  {
+    "source_id": "incident-payment-release-path-v1",
+    "path": "incidents/payment-release-path.md",
+    "title": "Payment callback path release regression",
+    "document_type": "incident",
+    "service": "payment",
+    "environment": "testbed",
+    "version": "1.0",
+    "source_ref": "repo://knowledge/incidents/payment-release-path.md"
+  },
+  {
+    "source_id": "runbook-inventory-latency-v1",
+    "path": "runbooks/inventory-latency.md",
+    "title": "Inventory downstream latency runbook",
+    "document_type": "runbook",
+    "service": "inventory",
+    "environment": "testbed",
+    "version": "1.0",
+    "source_ref": "repo://knowledge/runbooks/inventory-latency.md"
+  }
+]
