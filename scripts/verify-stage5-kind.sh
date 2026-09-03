@@ -77,13 +77,34 @@ env \
   "${acceptance_dir}/tool-gateway" >"${acceptance_dir}/gateway.log" 2>&1 &
 gateway_pid=$!
 
+gateway_ready=false
 for _ in {1..30}; do
   if curl -fsS http://127.0.0.1:18085/health/ready >/dev/null 2>&1; then
+    gateway_ready=true
     break
+  fi
+  if ! kill -0 "${gateway_pid}" 2>/dev/null; then
+    gateway_status=1
+    if wait "${gateway_pid}"; then
+      gateway_status=0
+    else
+      gateway_status=$?
+    fi
+    gateway_pid=""
+    echo "tool gateway exited before becoming ready (status ${gateway_status})" >&2
+    tail -n 200 "${acceptance_dir}/gateway.log" >&2
+    if [[ "${gateway_status}" -eq 0 ]]; then
+      gateway_status=1
+    fi
+    exit "${gateway_status}"
   fi
   sleep 1
 done
-curl -fsS http://127.0.0.1:18085/health/ready >/dev/null
+if [[ "${gateway_ready}" != true ]]; then
+  echo "tool gateway did not become ready within 30 seconds" >&2
+  tail -n 200 "${acceptance_dir}/gateway.log" >&2
+  exit 1
+fi
 
 uv run --project "${repo_root}/services/investigation" \
   python "${repo_root}/scripts/verify-stage5.py" \

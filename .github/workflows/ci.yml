@@ -94,6 +94,8 @@ jobs:
   stage5-remediation:
     name: Stage 5 remediation security
     runs-on: ubuntu-latest
+    env:
+      STAGE5_DATABASE_URL: postgresql://ai_sre:local-development-only@127.0.0.1:5432/ai_sre
     services:
       postgres:
         image: pgvector/pgvector:0.8.6-pg18
@@ -125,9 +127,9 @@ jobs:
       - run: uv sync --project services/investigation --frozen --all-groups
       - run: cd services/investigation && uv run ruff format --check ../../scripts/verify-stage5.py
       - run: cd services/investigation && uv run ruff check ../../scripts/verify-stage5.py
+      - name: Initialize phase 5 database schema
+        run: psql "$STAGE5_DATABASE_URL" --set ON_ERROR_STOP=on --file deploy/postgres/init.sql
       - run: make test-stage5-kind
-        env:
-          STAGE5_DATABASE_URL: postgresql://ai_sre:local-development-only@127.0.0.1:5432/ai_sre
 
   testbed:
     name: Observable testbed
