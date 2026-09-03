@@ -1,6 +1,6 @@
 # Investigation Service
 
-Python/FastAPI 服务拥有调查领域状态和模型编排。阶段 4 在单一显式 LangGraph 工作流中加入固定知识检索节点，通过 PostgreSQL 全文检索、pgvector 精确余弦检索和 RRF 合并 Runbook、服务说明与历史事故；模型不能选择任意工具或控制状态边。
+Python/FastAPI 服务拥有调查领域状态、模型编排和独立的人工审批状态机。LangGraph 负责只读调查与恢复，PostgreSQL 审批记录负责授权生命周期；模型不能选择任意工具、控制状态边或签发变更权限。
 
 ```bash
 uv sync --all-groups
@@ -17,6 +17,10 @@ uv run pytest
 - `GET /api/v1/investigations/{id}/events`（SSE，支持 `Last-Event-ID`）
 - `GET /api/v1/investigations/{id}/evidence/{evidence_id}`
 - `POST /api/v1/investigations/{id}/cancel`
+- `POST/GET /api/v1/investigations/{id}/approvals`
+- `PUT /api/v1/investigations/{id}/approvals/{approval_id}`
+- `POST /api/v1/investigations/{id}/approvals/{approval_id}/approve|reject|execute`
+- `GET /api/v1/investigations/{id}/remediation-audit`
 
 真实模型凭据只通过 `AI_SRE_MODEL_BASE_URL`、`AI_SRE_MODEL_API_KEY` 和 `AI_SRE_MODEL_ID` 注入。嵌入服务通过 `AI_SRE_EMBEDDING_*` 配置；base URL 和 API Key 未单独设置时继承模型配置。缺少调查运行时任一必需配置时创建调查返回 503。
 

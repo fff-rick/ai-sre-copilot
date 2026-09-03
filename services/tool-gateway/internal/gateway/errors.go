@@ -56,6 +56,7 @@ func toStatus(err error) error {
 		toolgatewayv1.ToolErrorCode_TOOL_ERROR_CODE_NOT_FOUND:          codes.NotFound,
 		toolgatewayv1.ToolErrorCode_TOOL_ERROR_CODE_RESPONSE_TOO_LARGE: codes.ResourceExhausted,
 		toolgatewayv1.ToolErrorCode_TOOL_ERROR_CODE_INTERNAL:           codes.Internal,
+		toolgatewayv1.ToolErrorCode_TOOL_ERROR_CODE_CONFLICT:           codes.AlreadyExists,
 	}[domain.Code]
 	if grpcCode == codes.OK {
 		grpcCode = codes.Internal

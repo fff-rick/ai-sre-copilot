@@ -19,23 +19,25 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ToolGatewayV1_ListTools_FullMethodName             = "/ai.sre.toolgateway.v1.ToolGatewayV1/ListTools"
-	ToolGatewayV1_QueryPrometheus_FullMethodName       = "/ai.sre.toolgateway.v1.ToolGatewayV1/QueryPrometheus"
-	ToolGatewayV1_QueryLoki_FullMethodName             = "/ai.sre.toolgateway.v1.ToolGatewayV1/QueryLoki"
-	ToolGatewayV1_GetTempoTrace_FullMethodName         = "/ai.sre.toolgateway.v1.ToolGatewayV1/GetTempoTrace"
-	ToolGatewayV1_SearchTempoTraces_FullMethodName     = "/ai.sre.toolgateway.v1.ToolGatewayV1/SearchTempoTraces"
-	ToolGatewayV1_ListReleases_FullMethodName          = "/ai.sre.toolgateway.v1.ToolGatewayV1/ListReleases"
-	ToolGatewayV1_GetGitCommit_FullMethodName          = "/ai.sre.toolgateway.v1.ToolGatewayV1/GetGitCommit"
-	ToolGatewayV1_GetKubernetesWorkload_FullMethodName = "/ai.sre.toolgateway.v1.ToolGatewayV1/GetKubernetesWorkload"
-	ToolGatewayV1_ListKubernetesEvents_FullMethodName  = "/ai.sre.toolgateway.v1.ToolGatewayV1/ListKubernetesEvents"
+	ToolGatewayV1_ListTools_FullMethodName               = "/ai.sre.toolgateway.v1.ToolGatewayV1/ListTools"
+	ToolGatewayV1_QueryPrometheus_FullMethodName         = "/ai.sre.toolgateway.v1.ToolGatewayV1/QueryPrometheus"
+	ToolGatewayV1_QueryLoki_FullMethodName               = "/ai.sre.toolgateway.v1.ToolGatewayV1/QueryLoki"
+	ToolGatewayV1_GetTempoTrace_FullMethodName           = "/ai.sre.toolgateway.v1.ToolGatewayV1/GetTempoTrace"
+	ToolGatewayV1_SearchTempoTraces_FullMethodName       = "/ai.sre.toolgateway.v1.ToolGatewayV1/SearchTempoTraces"
+	ToolGatewayV1_ListReleases_FullMethodName            = "/ai.sre.toolgateway.v1.ToolGatewayV1/ListReleases"
+	ToolGatewayV1_GetGitCommit_FullMethodName            = "/ai.sre.toolgateway.v1.ToolGatewayV1/GetGitCommit"
+	ToolGatewayV1_GetKubernetesWorkload_FullMethodName   = "/ai.sre.toolgateway.v1.ToolGatewayV1/GetKubernetesWorkload"
+	ToolGatewayV1_ListKubernetesEvents_FullMethodName    = "/ai.sre.toolgateway.v1.ToolGatewayV1/ListKubernetesEvents"
+	ToolGatewayV1_ExecuteApprovedMutation_FullMethodName = "/ai.sre.toolgateway.v1.ToolGatewayV1/ExecuteApprovedMutation"
+	ToolGatewayV1_GetMutationExecution_FullMethodName    = "/ai.sre.toolgateway.v1.ToolGatewayV1/GetMutationExecution"
 )
 
 // ToolGatewayV1Client is the client API for ToolGatewayV1 service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// ToolGatewayV1 is a fixed, read-only RPC surface. Mutation requires a
-// separately reviewed service boundary.
+// ToolGatewayV1 exposes fixed read tools plus approval-gated mutations. The
+// mutation RPC accepts only typed operations and revalidates durable approval.
 type ToolGatewayV1Client interface {
 	ListTools(ctx context.Context, in *ListToolsRequest, opts ...grpc.CallOption) (*ListToolsResponse, error)
 	QueryPrometheus(ctx context.Context, in *QueryPrometheusRequest, opts ...grpc.CallOption) (*ReadToolResponse, error)
@@ -46,6 +48,8 @@ type ToolGatewayV1Client interface {
 	GetGitCommit(ctx context.Context, in *GetGitCommitRequest, opts ...grpc.CallOption) (*ReadToolResponse, error)
 	GetKubernetesWorkload(ctx context.Context, in *GetKubernetesWorkloadRequest, opts ...grpc.CallOption) (*ReadToolResponse, error)
 	ListKubernetesEvents(ctx context.Context, in *ListKubernetesEventsRequest, opts ...grpc.CallOption) (*ReadToolResponse, error)
+	ExecuteApprovedMutation(ctx context.Context, in *ExecuteApprovedMutationRequest, opts ...grpc.CallOption) (*MutationExecution, error)
+	GetMutationExecution(ctx context.Context, in *GetMutationExecutionRequest, opts ...grpc.CallOption) (*MutationExecution, error)
 }
 
 type toolGatewayV1Client struct {
@@ -146,12 +150,32 @@ func (c *toolGatewayV1Client) ListKubernetesEvents(ctx context.Context, in *List
 	return out, nil
 }
 
+func (c *toolGatewayV1Client) ExecuteApprovedMutation(ctx context.Context, in *ExecuteApprovedMutationRequest, opts ...grpc.CallOption) (*MutationExecution, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MutationExecution)
+	err := c.cc.Invoke(ctx, ToolGatewayV1_ExecuteApprovedMutation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *toolGatewayV1Client) GetMutationExecution(ctx context.Context, in *GetMutationExecutionRequest, opts ...grpc.CallOption) (*MutationExecution, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MutationExecution)
+	err := c.cc.Invoke(ctx, ToolGatewayV1_GetMutationExecution_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ToolGatewayV1Server is the server API for ToolGatewayV1 service.
 // All implementations must embed UnimplementedToolGatewayV1Server
 // for forward compatibility.
 //
-// ToolGatewayV1 is a fixed, read-only RPC surface. Mutation requires a
-// separately reviewed service boundary.
+// ToolGatewayV1 exposes fixed read tools plus approval-gated mutations. The
+// mutation RPC accepts only typed operations and revalidates durable approval.
 type ToolGatewayV1Server interface {
 	ListTools(context.Context, *ListToolsRequest) (*ListToolsResponse, error)
 	QueryPrometheus(context.Context, *QueryPrometheusRequest) (*ReadToolResponse, error)
@@ -162,6 +186,8 @@ type ToolGatewayV1Server interface {
 	GetGitCommit(context.Context, *GetGitCommitRequest) (*ReadToolResponse, error)
 	GetKubernetesWorkload(context.Context, *GetKubernetesWorkloadRequest) (*ReadToolResponse, error)
 	ListKubernetesEvents(context.Context, *ListKubernetesEventsRequest) (*ReadToolResponse, error)
+	ExecuteApprovedMutation(context.Context, *ExecuteApprovedMutationRequest) (*MutationExecution, error)
+	GetMutationExecution(context.Context, *GetMutationExecutionRequest) (*MutationExecution, error)
 	mustEmbedUnimplementedToolGatewayV1Server()
 }
 
@@ -198,6 +224,12 @@ func (UnimplementedToolGatewayV1Server) GetKubernetesWorkload(context.Context, *
 }
 func (UnimplementedToolGatewayV1Server) ListKubernetesEvents(context.Context, *ListKubernetesEventsRequest) (*ReadToolResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListKubernetesEvents not implemented")
+}
+func (UnimplementedToolGatewayV1Server) ExecuteApprovedMutation(context.Context, *ExecuteApprovedMutationRequest) (*MutationExecution, error) {
+	return nil, status.Error(codes.Unimplemented, "method ExecuteApprovedMutation not implemented")
+}
+func (UnimplementedToolGatewayV1Server) GetMutationExecution(context.Context, *GetMutationExecutionRequest) (*MutationExecution, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetMutationExecution not implemented")
 }
 func (UnimplementedToolGatewayV1Server) mustEmbedUnimplementedToolGatewayV1Server() {}
 func (UnimplementedToolGatewayV1Server) testEmbeddedByValue()                       {}
@@ -382,6 +414,42 @@ func _ToolGatewayV1_ListKubernetesEvents_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ToolGatewayV1_ExecuteApprovedMutation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExecuteApprovedMutationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ToolGatewayV1Server).ExecuteApprovedMutation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ToolGatewayV1_ExecuteApprovedMutation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ToolGatewayV1Server).ExecuteApprovedMutation(ctx, req.(*ExecuteApprovedMutationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ToolGatewayV1_GetMutationExecution_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetMutationExecutionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ToolGatewayV1Server).GetMutationExecution(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ToolGatewayV1_GetMutationExecution_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ToolGatewayV1Server).GetMutationExecution(ctx, req.(*GetMutationExecutionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ToolGatewayV1_ServiceDesc is the grpc.ServiceDesc for ToolGatewayV1 service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -424,6 +492,14 @@ var ToolGatewayV1_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListKubernetesEvents",
 			Handler:    _ToolGatewayV1_ListKubernetesEvents_Handler,
+		},
+		{
+			MethodName: "ExecuteApprovedMutation",
+			Handler:    _ToolGatewayV1_ExecuteApprovedMutation_Handler,
+		},
+		{
+			MethodName: "GetMutationExecution",
+			Handler:    _ToolGatewayV1_GetMutationExecution_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -2,7 +2,7 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from ai_sre_investigation.domain import (
     Alert,
@@ -10,6 +10,7 @@ from ai_sre_investigation.domain import (
     InvestigationBudget,
     InvestigationStatus,
 )
+from ai_sre_investigation.remediation import RemediationAction
 from ai_sre_investigation.repository import InvestigationEvent
 
 
@@ -60,3 +61,19 @@ class InvestigationTimelineResponse(BaseModel):
 class EvidenceDetailResponse(BaseModel):
     investigation_id: str
     evidence: dict[str, Any]
+
+
+class ProposeApprovalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: RemediationAction
+
+
+class ApproveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expires_in_seconds: int = Field(default=900, ge=60, le=1_800)
+
+
+class ExecuteRemediationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    approval_token: str = Field(min_length=32, max_length=512)
+    idempotency_key: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$")

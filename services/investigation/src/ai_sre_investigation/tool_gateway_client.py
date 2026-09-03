@@ -12,7 +12,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ai_sre_investigation.generated import tool_gateway_pb2 as pb
 from ai_sre_investigation.generated import tool_gateway_pb2_grpc as pb_grpc
-from ai_sre_investigation.ports import ArtifactReference, ToolRequest, ToolResponse
+from ai_sre_investigation.ports import (
+    ArtifactReference,
+    MutationRequest,
+    MutationResponse,
+    ToolRequest,
+    ToolResponse,
+)
 
 
 class ToolGatewayError(RuntimeError):
@@ -121,6 +127,87 @@ class GrpcToolClient:
         except grpc.aio.AioRpcError as error:
             self._raise_stable(error)
         return self._decode(response)
+
+    async def execute_mutation(self, request: MutationRequest) -> MutationResponse:
+        """Dispatch one typed mutation; arbitrary commands cannot cross this adapter."""
+
+        context = pb.RequestContext(
+            investigation_id=request.investigation_id,
+            trace_id=request.trace_id,
+            caller=pb.CallerIdentity(actor_id=request.actor_id, role="approver"),
+        )
+        parameters = dict(request.parameters)
+        namespace = str(parameters.get("namespace", ""))
+        name = str(parameters.get("name", ""))
+        kwargs: dict[str, Any] = {
+            "context": context,
+            "approval_token": request.approval_token,
+            "idempotency_key": request.idempotency_key,
+        }
+        if request.tool_name == "kubernetes.restart_deployment":
+            kwargs["restart_deployment"] = pb.RestartDeploymentArgs(namespace=namespace, name=name)
+        elif request.tool_name == "kubernetes.scale_deployment":
+            kwargs["scale_deployment"] = pb.ScaleDeploymentArgs(
+                namespace=namespace, name=name, replicas=int(parameters.get("replicas", -1))
+            )
+        elif request.tool_name == "kubernetes.rollback_deployment":
+            kwargs["rollback_deployment"] = pb.RollbackDeploymentArgs(
+                namespace=namespace, name=name, revision=int(parameters.get("revision", -1))
+            )
+        else:
+            raise LookupError(f"unregistered mutation tool: {request.tool_name}")
+        try:
+            response = await self._stub.ExecuteApprovedMutation(
+                pb.ExecuteApprovedMutationRequest(**kwargs),
+                timeout=self._timeout_seconds,
+                metadata=self._metadata,
+            )
+        except grpc.aio.AioRpcError as error:
+            self._raise_stable(error)
+        return self._decode_mutation(response)
+
+    async def get_mutation_execution(
+        self, investigation_id: str, trace_id: str, idempotency_key: str
+    ) -> MutationResponse:
+        """Query durable execution state before deciding whether a retry is safe."""
+
+        context = pb.RequestContext(
+            investigation_id=investigation_id,
+            trace_id=trace_id,
+            caller=pb.CallerIdentity(actor_id=self._actor_id, role=self._role),
+        )
+        try:
+            response = await self._stub.GetMutationExecution(
+                pb.GetMutationExecutionRequest(context=context, idempotency_key=idempotency_key),
+                timeout=self._timeout_seconds,
+                metadata=self._metadata,
+            )
+        except grpc.aio.AioRpcError as error:
+            self._raise_stable(error)
+        return self._decode_mutation(response)
+
+    @staticmethod
+    def _decode_mutation(response: pb.MutationExecution) -> MutationResponse:
+        data: Mapping[str, Any] | list[Any] | None = None
+        if response.json_payload:
+            decoded = json.loads(response.json_payload)
+            if isinstance(decoded, (dict, list)):
+                data = decoded
+        status_name = pb.MutationExecutionStatus.Name(response.status)
+        status_name = status_name.removeprefix("MUTATION_EXECUTION_STATUS_")
+        return MutationResponse(
+            execution_id=response.execution_id,
+            approval_id=response.approval_id,
+            investigation_id=response.investigation_id,
+            tool_name=response.tool_name,
+            target=response.target,
+            parameters_hash=response.parameters_hash,
+            idempotency_key=response.idempotency_key,
+            status=status_name,
+            data=data,
+            safe_error=response.safe_error,
+            replayed=response.replayed,
+        )
 
     async def _dispatch(
         self, context: pb.RequestContext, tool_name: str, arguments: Mapping[str, Any]

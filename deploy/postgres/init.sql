@@ -30,6 +30,62 @@ CREATE TABLE IF NOT EXISTS investigation_events (
 CREATE INDEX IF NOT EXISTS investigation_events_stream_idx
 ON investigation_events (investigation_id, event_id);
 
+CREATE TABLE IF NOT EXISTS remediation_approvals (
+    approval_id text PRIMARY KEY,
+    investigation_id text NOT NULL REFERENCES investigations(investigation_id) ON DELETE CASCADE,
+    action_id text NOT NULL,
+    tool_name text NOT NULL,
+    target text NOT NULL,
+    parameters jsonb NOT NULL,
+    parameters_hash char(64) NOT NULL,
+    risk_level text NOT NULL,
+    status text NOT NULL,
+    proposed_by text NOT NULL,
+    approved_by text,
+    rejected_by text,
+    token_hash char(64) UNIQUE,
+    token_expires_at timestamptz,
+    consumed_at timestamptz,
+    action jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS remediation_approvals_investigation_idx
+ON remediation_approvals (investigation_id, created_at);
+
+CREATE TABLE IF NOT EXISTS remediation_executions (
+    execution_id text PRIMARY KEY,
+    approval_id text NOT NULL REFERENCES remediation_approvals(approval_id),
+    investigation_id text NOT NULL REFERENCES investigations(investigation_id) ON DELETE CASCADE,
+    tool_name text NOT NULL,
+    target text NOT NULL,
+    parameters_hash char(64) NOT NULL,
+    idempotency_key text NOT NULL UNIQUE,
+    status text NOT NULL,
+    result jsonb,
+    safe_error text NOT NULL DEFAULT '',
+    recovery_status text,
+    pre_evidence jsonb,
+    post_evidence jsonb,
+    started_at timestamptz NOT NULL DEFAULT now(),
+    finished_at timestamptz
+);
+
+CREATE TABLE IF NOT EXISTS remediation_audit_events (
+    event_id bigserial PRIMARY KEY,
+    investigation_id text NOT NULL REFERENCES investigations(investigation_id) ON DELETE CASCADE,
+    approval_id text REFERENCES remediation_approvals(approval_id),
+    event_type text NOT NULL,
+    actor_id text NOT NULL,
+    outcome text NOT NULL,
+    tool_name text NOT NULL,
+    target text NOT NULL,
+    parameters_hash char(64) NOT NULL,
+    payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS knowledge_documents (
     document_id text PRIMARY KEY,
     source_id text NOT NULL UNIQUE,

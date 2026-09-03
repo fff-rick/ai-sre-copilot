@@ -26,8 +26,8 @@ if _version_not_supported:
 
 
 class ToolGatewayV1Stub:
-    """ToolGatewayV1 is a fixed, read-only RPC surface. Mutation requires a
-    separately reviewed service boundary.
+    """ToolGatewayV1 exposes fixed read tools plus approval-gated mutations. The
+    mutation RPC accepts only typed operations and revalidates durable approval.
     """
 
     def __init__(self, channel):
@@ -81,11 +81,21 @@ class ToolGatewayV1Stub:
                 request_serializer=tool__gateway__pb2.ListKubernetesEventsRequest.SerializeToString,
                 response_deserializer=tool__gateway__pb2.ReadToolResponse.FromString,
                 _registered_method=True)
+        self.ExecuteApprovedMutation = channel.unary_unary(
+                '/ai.sre.toolgateway.v1.ToolGatewayV1/ExecuteApprovedMutation',
+                request_serializer=tool__gateway__pb2.ExecuteApprovedMutationRequest.SerializeToString,
+                response_deserializer=tool__gateway__pb2.MutationExecution.FromString,
+                _registered_method=True)
+        self.GetMutationExecution = channel.unary_unary(
+                '/ai.sre.toolgateway.v1.ToolGatewayV1/GetMutationExecution',
+                request_serializer=tool__gateway__pb2.GetMutationExecutionRequest.SerializeToString,
+                response_deserializer=tool__gateway__pb2.MutationExecution.FromString,
+                _registered_method=True)
 
 
 class ToolGatewayV1Servicer:
-    """ToolGatewayV1 is a fixed, read-only RPC surface. Mutation requires a
-    separately reviewed service boundary.
+    """ToolGatewayV1 exposes fixed read tools plus approval-gated mutations. The
+    mutation RPC accepts only typed operations and revalidates durable approval.
     """
 
     def ListTools(self, request, context):
@@ -142,6 +152,18 @@ class ToolGatewayV1Servicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ExecuteApprovedMutation(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetMutationExecution(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ToolGatewayV1Servicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -190,6 +212,16 @@ def add_ToolGatewayV1Servicer_to_server(servicer, server):
                     request_deserializer=tool__gateway__pb2.ListKubernetesEventsRequest.FromString,
                     response_serializer=tool__gateway__pb2.ReadToolResponse.SerializeToString,
             ),
+            'ExecuteApprovedMutation': grpc.unary_unary_rpc_method_handler(
+                    servicer.ExecuteApprovedMutation,
+                    request_deserializer=tool__gateway__pb2.ExecuteApprovedMutationRequest.FromString,
+                    response_serializer=tool__gateway__pb2.MutationExecution.SerializeToString,
+            ),
+            'GetMutationExecution': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetMutationExecution,
+                    request_deserializer=tool__gateway__pb2.GetMutationExecutionRequest.FromString,
+                    response_serializer=tool__gateway__pb2.MutationExecution.SerializeToString,
+            ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
             'ai.sre.toolgateway.v1.ToolGatewayV1', rpc_method_handlers)
@@ -199,8 +231,8 @@ def add_ToolGatewayV1Servicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class ToolGatewayV1:
-    """ToolGatewayV1 is a fixed, read-only RPC surface. Mutation requires a
-    separately reviewed service boundary.
+    """ToolGatewayV1 exposes fixed read tools plus approval-gated mutations. The
+    mutation RPC accepts only typed operations and revalidates durable approval.
     """
 
     @staticmethod
@@ -436,6 +468,60 @@ class ToolGatewayV1:
             '/ai.sre.toolgateway.v1.ToolGatewayV1/ListKubernetesEvents',
             tool__gateway__pb2.ListKubernetesEventsRequest.SerializeToString,
             tool__gateway__pb2.ReadToolResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ExecuteApprovedMutation(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/ai.sre.toolgateway.v1.ToolGatewayV1/ExecuteApprovedMutation',
+            tool__gateway__pb2.ExecuteApprovedMutationRequest.SerializeToString,
+            tool__gateway__pb2.MutationExecution.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetMutationExecution(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/ai.sre.toolgateway.v1.ToolGatewayV1/GetMutationExecution',
+            tool__gateway__pb2.GetMutationExecutionRequest.SerializeToString,
+            tool__gateway__pb2.MutationExecution.FromString,
             options,
             channel_credentials,
             insecure,

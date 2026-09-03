@@ -36,7 +36,7 @@ class ModelClient(Protocol):
 
 
 class ToolRequest(BaseModel):
-    """Read-only tool request; mutation gets a separate contract later."""
+    """Read-only tool request, kept separate from approval-gated mutation."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -72,3 +72,37 @@ class ToolClient(Protocol):
     """Port for the Go tool gateway."""
 
     async def execute_read(self, request: ToolRequest) -> ToolResponse: ...
+
+
+class MutationRequest(BaseModel):
+    """Approval-gated request sent only to the trusted Go gateway."""
+
+    model_config = ConfigDict(frozen=True)
+
+    investigation_id: str = Field(min_length=1, max_length=255)
+    trace_id: str = Field(min_length=1, max_length=128)
+    actor_id: str = Field(min_length=1, max_length=255)
+    approval_token: str = Field(min_length=1, max_length=512)
+    idempotency_key: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$")
+    tool_name: str
+    parameters: Mapping[str, Any]
+
+
+class MutationResponse(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    execution_id: str
+    approval_id: str
+    investigation_id: str
+    tool_name: str
+    target: str
+    parameters_hash: str
+    idempotency_key: str
+    status: str
+    data: Mapping[str, Any] | list[Any] | None
+    safe_error: str = ""
+    replayed: bool = False
+
+
+class MutationClient(Protocol):
+    async def execute_mutation(self, request: MutationRequest) -> MutationResponse: ...

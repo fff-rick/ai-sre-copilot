@@ -12,6 +12,7 @@ from ai_sre_investigation.domain import (
     InvestigationBudget,
     InvestigationStatus,
 )
+from ai_sre_investigation.remediation_service import RemediationService
 from ai_sre_investigation.repository import (
     InvestigationEvent,
     InvestigationRepository,
@@ -26,10 +27,12 @@ class InvestigationService:
         *,
         repository: InvestigationRepository,
         workflow: InvestigationWorkflow,
+        remediation: RemediationService | None = None,
         poll_seconds: float = 0.1,
     ) -> None:
         self.repository = repository
         self.workflow = workflow
+        self.remediation = remediation
         self._poll_seconds = poll_seconds
         self._wake = asyncio.Event()
         self._worker: asyncio.Task[None] | None = None

@@ -11,6 +11,8 @@ from ai_sre_investigation.embedding_client import OpenAICompatibleEmbeddingClien
 from ai_sre_investigation.knowledge import KnowledgeRetriever
 from ai_sre_investigation.knowledge_postgres import PostgresKnowledgeRepository
 from ai_sre_investigation.model_client import OpenAICompatibleModelClient
+from ai_sre_investigation.remediation import PostgresRemediationRepository
+from ai_sre_investigation.remediation_service import RemediationService
 from ai_sre_investigation.repository import PostgresInvestigationRepository
 from ai_sre_investigation.service import InvestigationService
 from ai_sre_investigation.tool_gateway_client import GrpcToolClient
@@ -40,6 +42,8 @@ async def production_service(  # pragma: no cover - exercised by compose accepta
     await pool.open(wait=True)
     repository = PostgresInvestigationRepository(pool)
     await repository.setup()
+    remediation_repository = PostgresRemediationRepository(pool)
+    await remediation_repository.setup()
     knowledge_repository = PostgresKnowledgeRepository(pool)
     await knowledge_repository.setup()
     # Builtin-only deserialization prevents checkpoint rows from constructing Python objects.
@@ -76,7 +80,17 @@ async def production_service(  # pragma: no cover - exercised by compose accepta
             knowledge=knowledge,
             event_sink=repository.append_event,
         )
-        service = InvestigationService(repository=repository, workflow=workflow)
+        remediation = RemediationService(
+            investigations=repository,
+            repository=remediation_repository,
+            tools=tools,
+            mutations=tools,
+            allowed_namespace=settings.mutation_allowed_namespace,
+            validation_delay_seconds=settings.remediation_validation_delay_seconds,
+        )
+        service = InvestigationService(
+            repository=repository, workflow=workflow, remediation=remediation
+        )
         await service.start()
         try:
             yield service

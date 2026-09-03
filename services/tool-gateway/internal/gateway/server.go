@@ -14,40 +14,46 @@ import (
 )
 
 const (
-	defaultLimit = uint32(100)
-	maximumLimit = uint32(1000)
-	maximumRange = 7 * 24 * time.Hour
+	defaultLimit    = uint32(100)
+	maximumLimit    = uint32(1000)
+	maximumRange    = 7 * 24 * time.Hour
+	maximumReplicas = int32(100)
 )
 
 var (
-	traceIDPattern  = regexp.MustCompile(`^[a-fA-F0-9]{16,64}$`)
-	revisionPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/~^-]{0,199}$`)
+	traceIDPattern     = regexp.MustCompile(`^[a-fA-F0-9]{16,64}$`)
+	revisionPattern    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/~^-]{0,199}$`)
+	idempotencyPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$`)
 )
 
 type serverOptions struct {
-	Observability observabilityConnector
-	Releases      releaseConnector
-	Git           gitConnector
-	Kubernetes    kubernetesConnector
-	Limiter       *actorLimiter
-	Audit         auditSink
-	Artifacts     *artifactStore
-	InlineBytes   int
-	AuthToken     string
+	Observability      observabilityConnector
+	Releases           releaseConnector
+	Git                gitConnector
+	Kubernetes         kubernetesConnector
+	Limiter            *actorLimiter
+	Audit              auditSink
+	Artifacts          *artifactStore
+	InlineBytes        int
+	AuthToken          string
+	MutationAuthorizer mutationAuthorizer
+	AllowedNamespace   string
 }
 
-// Server implements the fixed V1 read-only tool surface.
+// Server implements fixed V1 reads and approval-gated typed mutations.
 type Server struct {
 	toolgatewayv1.UnimplementedToolGatewayV1Server
-	observability observabilityConnector
-	releases      releaseConnector
-	git           gitConnector
-	kubernetes    kubernetesConnector
-	limiter       *actorLimiter
-	audit         auditSink
-	artifacts     *artifactStore
-	inlineBytes   int
-	authToken     string
+	observability      observabilityConnector
+	releases           releaseConnector
+	git                gitConnector
+	kubernetes         kubernetesConnector
+	limiter            *actorLimiter
+	audit              auditSink
+	artifacts          *artifactStore
+	inlineBytes        int
+	authToken          string
+	mutationAuthorizer mutationAuthorizer
+	allowedNamespace   string
 }
 
 func newServer(options serverOptions) (*Server, error) {
@@ -57,10 +63,17 @@ func newServer(options serverOptions) (*Server, error) {
 	if options.InlineBytes <= 0 || options.AuthToken == "" {
 		return nil, errors.New("inline response size and authentication token are required")
 	}
+	if options.MutationAuthorizer == nil {
+		options.MutationAuthorizer = unavailableMutationAuthorizer{}
+	}
+	if options.AllowedNamespace == "" {
+		options.AllowedNamespace = "ai-sre-test"
+	}
 	return &Server{
 		observability: options.Observability, releases: options.Releases, git: options.Git,
 		kubernetes: options.Kubernetes, limiter: options.Limiter, audit: options.Audit,
 		artifacts: options.Artifacts, inlineBytes: options.InlineBytes, authToken: options.AuthToken,
+		mutationAuthorizer: options.MutationAuthorizer, allowedNamespace: options.AllowedNamespace,
 	}, nil
 }
 
@@ -77,7 +90,162 @@ func (s *Server) ListTools(ctx context.Context, request *toolgatewayv1.ListTools
 		{Name: "git.get_commit", Version: "v1", Description: "Read commit metadata and bounded file statistics."},
 		{Name: "kubernetes.get_workload", Version: "v1", Description: "Read one supported workload status."},
 		{Name: "kubernetes.list_events", Version: "v1", Description: "List bounded Kubernetes events."},
+		{Name: "kubernetes.restart_deployment", Version: "v1", Description: "Restart one approved Deployment in the isolated namespace."},
+		{Name: "kubernetes.scale_deployment", Version: "v1", Description: "Scale one approved Deployment in the isolated namespace."},
+		{Name: "kubernetes.rollback_deployment", Version: "v1", Description: "Roll back one approved Deployment revision in the isolated namespace."},
 	}}, nil
+}
+
+func (s *Server) ExecuteApprovedMutation(ctx context.Context, request *toolgatewayv1.ExecuteApprovedMutationRequest) (*toolgatewayv1.MutationExecution, error) {
+	started := time.Now()
+	if request == nil {
+		return nil, toStatus(invalid("mutation request is required"))
+	}
+	if err := validateMutationContext(ctx, request.GetContext(), s.limiter, s.authToken); err != nil {
+		return nil, s.fail(ctx, request.GetContext(), "mutation.execute", request, err, started)
+	}
+	if strings.TrimSpace(request.GetApprovalToken()) == "" {
+		return nil, s.fail(ctx, request.GetContext(), "mutation.execute", request, permissionDenied("approval token is required"), started)
+	}
+	if !idempotencyPattern.MatchString(request.GetIdempotencyKey()) {
+		return nil, s.fail(ctx, request.GetContext(), "mutation.execute", request, invalid("idempotency_key must contain 8 to 128 safe characters"), started)
+	}
+	spec, call, err := s.mutationCall(ctx, request)
+	if err != nil {
+		return nil, s.fail(ctx, request.GetContext(), "mutation.execute", request, err, started)
+	}
+	actorID := request.GetContext().GetCaller().GetActorId()
+	record, replayed, err := s.mutationAuthorizer.Authorize(
+		ctx, request.GetApprovalToken(), request.GetIdempotencyKey(),
+		request.GetContext().GetInvestigationId(), actorID, spec,
+	)
+	if err != nil {
+		return nil, s.fail(ctx, request.GetContext(), spec.ToolName, request, err, started)
+	}
+	if replayed {
+		s.writeAudit(ctx, request.GetContext(), spec.ToolName, request, "replayed", "", started)
+		return mutationExecutionProto(record, true), nil
+	}
+	result, callErr := call()
+	if callErr != nil {
+		safeError := "approved Kubernetes mutation failed"
+		var domain *Error
+		if errors.As(callErr, &domain) {
+			safeError = domain.Message
+		}
+		record, _ = s.mutationAuthorizer.Finalize(ctx, record.ExecutionID, "FAILED", nil, safeError)
+		return nil, s.fail(ctx, request.GetContext(), spec.ToolName, request, callErr, started)
+	}
+	payload, _, err := sanitizePayload(result.Data)
+	if err != nil {
+		_, _ = s.mutationAuthorizer.Finalize(ctx, record.ExecutionID, "FAILED", nil, "mutation result could not be encoded")
+		return nil, s.fail(ctx, request.GetContext(), spec.ToolName, request, err, started)
+	}
+	record, err = s.mutationAuthorizer.Finalize(ctx, record.ExecutionID, "SUCCEEDED", payload, "")
+	if err != nil {
+		return nil, s.fail(ctx, request.GetContext(), spec.ToolName, request, err, started)
+	}
+	s.writeAudit(ctx, request.GetContext(), spec.ToolName, request, "success", "", started)
+	return mutationExecutionProto(record, false), nil
+}
+
+func (s *Server) GetMutationExecution(ctx context.Context, request *toolgatewayv1.GetMutationExecutionRequest) (*toolgatewayv1.MutationExecution, error) {
+	started := time.Now()
+	if request == nil {
+		return nil, toStatus(invalid("execution request is required"))
+	}
+	if err := validateContext(ctx, request.GetContext(), s.limiter, s.authToken); err != nil {
+		return nil, s.fail(ctx, request.GetContext(), "mutation.get_execution", request, err, started)
+	}
+	if !idempotencyPattern.MatchString(request.GetIdempotencyKey()) {
+		return nil, s.fail(ctx, request.GetContext(), "mutation.get_execution", request, invalid("idempotency_key must contain 8 to 128 safe characters"), started)
+	}
+	record, err := s.mutationAuthorizer.Get(ctx, request.GetContext().GetInvestigationId(), request.GetIdempotencyKey())
+	if err != nil {
+		return nil, s.fail(ctx, request.GetContext(), "mutation.get_execution", request, err, started)
+	}
+	s.writeAudit(ctx, request.GetContext(), "mutation.get_execution", request, "success", "", started)
+	return mutationExecutionProto(record, false), nil
+}
+
+func (s *Server) mutationCall(ctx context.Context, request *toolgatewayv1.ExecuteApprovedMutationRequest) (mutationSpec, func() (connectorResult, error), error) {
+	var spec mutationSpec
+	var call func() (connectorResult, error)
+	switch operation := request.GetOperation().(type) {
+	case *toolgatewayv1.ExecuteApprovedMutationRequest_RestartDeployment:
+		args := operation.RestartDeployment
+		if err := s.validateMutationTarget(args.GetNamespace(), args.GetName()); err != nil {
+			return spec, nil, err
+		}
+		spec = newMutationSpec("kubernetes.restart_deployment", args.GetNamespace(), args.GetName(), map[string]any{"name": args.GetName(), "namespace": args.GetNamespace()})
+		call = func() (connectorResult, error) {
+			return s.kubernetes.RestartDeployment(ctx, args.GetNamespace(), args.GetName(), time.Now())
+		}
+	case *toolgatewayv1.ExecuteApprovedMutationRequest_ScaleDeployment:
+		args := operation.ScaleDeployment
+		if err := s.validateMutationTarget(args.GetNamespace(), args.GetName()); err != nil {
+			return spec, nil, err
+		}
+		if args.GetReplicas() < 0 || args.GetReplicas() > maximumReplicas {
+			return spec, nil, invalid("replicas must be between 0 and 100")
+		}
+		spec = newMutationSpec("kubernetes.scale_deployment", args.GetNamespace(), args.GetName(), map[string]any{"name": args.GetName(), "namespace": args.GetNamespace(), "replicas": args.GetReplicas()})
+		call = func() (connectorResult, error) {
+			return s.kubernetes.ScaleDeployment(ctx, args.GetNamespace(), args.GetName(), args.GetReplicas())
+		}
+	case *toolgatewayv1.ExecuteApprovedMutationRequest_RollbackDeployment:
+		args := operation.RollbackDeployment
+		if err := s.validateMutationTarget(args.GetNamespace(), args.GetName()); err != nil {
+			return spec, nil, err
+		}
+		if args.GetRevision() < 0 {
+			return spec, nil, invalid("revision must be zero or a positive integer")
+		}
+		spec = newMutationSpec("kubernetes.rollback_deployment", args.GetNamespace(), args.GetName(), map[string]any{"name": args.GetName(), "namespace": args.GetNamespace(), "revision": args.GetRevision()})
+		call = func() (connectorResult, error) {
+			return s.kubernetes.RollbackDeployment(ctx, args.GetNamespace(), args.GetName(), args.GetRevision())
+		}
+	default:
+		return spec, nil, invalid("one typed mutation operation is required")
+	}
+	return spec, call, nil
+}
+
+func (s *Server) validateMutationTarget(namespace, name string) error {
+	if !kubernetesNamePattern.MatchString(namespace) || !kubernetesNamePattern.MatchString(name) {
+		return invalid("namespace and name must be valid Kubernetes names")
+	}
+	if namespace != s.allowedNamespace {
+		return permissionDenied("mutation target is outside the isolated namespace")
+	}
+	return nil
+}
+
+func newMutationSpec(toolName, namespace, name string, parameters map[string]any) mutationSpec {
+	hash, _ := canonicalHash(parameters)
+	return mutationSpec{ToolName: toolName, Target: namespace + "/deployment/" + name, Parameters: parameters, ParametersHash: hash}
+}
+
+func mutationExecutionProto(record mutationExecution, replayed bool) *toolgatewayv1.MutationExecution {
+	statuses := map[string]toolgatewayv1.MutationExecutionStatus{
+		"EXECUTING": toolgatewayv1.MutationExecutionStatus_MUTATION_EXECUTION_STATUS_EXECUTING,
+		"SUCCEEDED": toolgatewayv1.MutationExecutionStatus_MUTATION_EXECUTION_STATUS_SUCCEEDED,
+		"FAILED":    toolgatewayv1.MutationExecutionStatus_MUTATION_EXECUTION_STATUS_FAILED,
+	}
+	response := &toolgatewayv1.MutationExecution{
+		ExecutionId: record.ExecutionID, ApprovalId: record.ApprovalID,
+		InvestigationId: record.InvestigationID, ToolName: record.ToolName,
+		Target: record.Target, ParametersHash: record.ParametersHash,
+		IdempotencyKey: record.IdempotencyKey, Status: statuses[record.Status],
+		JsonPayload: record.Result, SafeError: record.SafeError, Replayed: replayed,
+	}
+	if !record.StartedAt.IsZero() {
+		response.StartedAt = timestamppb.New(record.StartedAt)
+	}
+	if record.FinishedAt != nil {
+		response.FinishedAt = timestamppb.New(*record.FinishedAt)
+	}
+	return response
 }
 
 func (s *Server) QueryPrometheus(ctx context.Context, request *toolgatewayv1.QueryPrometheusRequest) (*toolgatewayv1.ReadToolResponse, error) {

@@ -2,7 +2,7 @@
 
 AI-SRE Copilot 是一个面向中小研发团队的智能故障调查与安全处置系统。它从告警出发，关联指标、日志、链路、Kubernetes 事件、发布记录和历史事故，输出带证据的根因假设、处置建议与复盘报告。
 
-项目已完成阶段 0～4。系统已经具备可恢复的调查工作流、PostgreSQL + pgvector 混合知识检索、持久事件流和可追溯证据工作台；下一阶段进入人在回路与隔离处置。V1 聚焦“调查正确、证据可查、安全可控”，不追求无人值守自愈。
+项目已完成阶段 0～5。系统已经具备可恢复调查、混合知识检索、证据工作台，以及审批令牌约束的隔离处置闭环；下一阶段进入评测与质量门禁。V1 聚焦“调查正确、证据可查、安全可控”，不追求无人值守自愈。
 
 ## 核心原则
 
@@ -44,6 +44,7 @@ Observable Testbed
 9. [阶段 2 验收记录](docs/09-stage2-validation.md)
 10. [阶段 3 验收记录](docs/10-stage3-validation.md)
 11. [阶段 4 验收记录](docs/11-stage4-validation.md)
+12. [阶段 5 验收记录](docs/12-stage5-validation.md)
 
 ## 当前可运行基线
 
@@ -113,6 +114,14 @@ uv run --project services/investigation ai-sre-ingest knowledge/catalog.json
 离线检索报告写入忽略提交的 `artifacts/stage4-retrieval.{json,md}`。当前基线明确暴露
 PostgreSQL `simple` 词法配置对无空格中文查询的不足，不把离线 Hash embedding 指标解释为
 线上语义模型质量。
+
+阶段 5 的审批、幂等和临时 kind 隔离变更门禁为：
+
+```bash
+make acceptance-stage5
+```
+
+变更只允许 `MUTATION_ALLOWED_NAMESPACE` 指定的测试命名空间。数据库或审批授权不可用时，网关关闭变更能力并拒绝产生无法审计的副作用。
 
 阶段 1 的可观测测试床使用独立 Compose 项目，避免拖慢日常工程基线：
 

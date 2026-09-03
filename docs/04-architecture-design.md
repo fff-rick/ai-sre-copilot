@@ -64,6 +64,7 @@ Web UI 不直接调用工具网关，不持有集群凭据。
 - 对证据进行裁剪、排序和上下文构建。
 - 执行结构化模型调用和结果校验。
 - 持久化检查点、报告和评测结果。
+- 管理独立于模型检查点的审批状态与动作前后验证。
 - 通过 SSE 向 Web UI 推送进度事件。
 
 ### 4.3 Tool Gateway
@@ -97,14 +98,14 @@ stateDiagram-v2
     HYPOTHESIZING --> VERIFYING
     VERIFYING --> HYPOTHESIZING: 证据不足且未超预算
     VERIFYING --> RECOMMENDING: 根因达到阈值或预算耗尽
-    RECOMMENDING --> WAITING_APPROVAL: 存在变更建议
-    RECOMMENDING --> REPORTING: 仅调查
-    WAITING_APPROVAL --> EXECUTING: 批准
-    WAITING_APPROVAL --> RECOMMENDING: 修改或拒绝
-    EXECUTING --> VALIDATING
-    VALIDATING --> REPORTING: 恢复或停止
-    VALIDATING --> HYPOTHESIZING: 未恢复且仍有预算
+    RECOMMENDING --> REPORTING
     REPORTING --> COMPLETED
+    COMPLETED --> WAITING_APPROVAL: 人工提交固定类型变更
+    WAITING_APPROVAL --> EXECUTING: 批准
+    WAITING_APPROVAL --> WAITING_APPROVAL: 修改后重新审批
+    WAITING_APPROVAL --> COMPLETED: 拒绝或过期
+    EXECUTING --> VALIDATING
+    VALIDATING --> COMPLETED: 保存恢复判定
     RECEIVED --> CANCELLED
     SCOPING --> FAILED
     COLLECTING --> FAILED
@@ -187,11 +188,9 @@ stateDiagram-v2
 
 ```text
 ListTools
-ExecuteReadTool
-ProposeMutation
+QueryPrometheus / QueryLoki / Tempo / Release / Git / Kubernetes reads
 ExecuteApprovedMutation
-GetExecution
-CancelExecution
+GetMutationExecution
 ```
 
 协议要求：
@@ -319,4 +318,3 @@ V1 禁止任意 Shell、任意 SQL 和模型动态注册工具。
 - 调查跨天或跨多个服务且恢复语义不足，再评估 Temporal。
 - 语料规模或中文检索质量超出 PostgreSQL 能力，再评估独立搜索服务。
 - 单 Agent 评测暴露稳定的上下文瓶颈，再引入隔离的调查子图。
-

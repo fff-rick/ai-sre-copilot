@@ -5,7 +5,7 @@ import grpc
 
 from ai_sre_investigation.generated import tool_gateway_pb2 as pb
 from ai_sre_investigation.generated import tool_gateway_pb2_grpc as pb_grpc
-from ai_sre_investigation.ports import ToolRequest
+from ai_sre_investigation.ports import MutationRequest, ToolRequest
 from ai_sre_investigation.tool_gateway_client import GrpcToolClient, ToolGatewayError
 
 
@@ -14,6 +14,7 @@ class RecordingGateway(pb_grpc.ToolGatewayV1Servicer):
         self.request: pb.QueryPrometheusRequest | None = None
         self.authorization = ""
         self.had_deadline = False
+        self.mutations: list[pb.ExecuteApprovedMutationRequest] = []
 
     async def QueryPrometheus(
         self,
@@ -53,6 +54,42 @@ class RecordingGateway(pb_grpc.ToolGatewayV1Servicer):
 
     async def ListKubernetesEvents(self, request: Any, context: Any) -> pb.ReadToolResponse:
         return _response("kubernetes.list_events")
+
+    async def ExecuteApprovedMutation(
+        self, request: pb.ExecuteApprovedMutationRequest, context: Any
+    ) -> pb.MutationExecution:
+        del context
+        self.mutations.append(request)
+        return pb.MutationExecution(
+            execution_id=f"exec-{len(self.mutations)}",
+            approval_id="apr-1",
+            investigation_id=request.context.investigation_id,
+            tool_name={
+                "restart_deployment": "kubernetes.restart_deployment",
+                "scale_deployment": "kubernetes.scale_deployment",
+                "rollback_deployment": "kubernetes.rollback_deployment",
+            }[request.WhichOneof("operation")],
+            target="ai-sre-test/deployment/payment",
+            parameters_hash="a" * 64,
+            idempotency_key=request.idempotency_key,
+            status=pb.MUTATION_EXECUTION_STATUS_SUCCEEDED,
+            json_payload=b'{"changed":true}',
+        )
+
+    async def GetMutationExecution(
+        self, request: pb.GetMutationExecutionRequest, context: Any
+    ) -> pb.MutationExecution:
+        del context
+        return pb.MutationExecution(
+            execution_id="exec-existing",
+            approval_id="apr-1",
+            investigation_id=request.context.investigation_id,
+            tool_name="kubernetes.scale_deployment",
+            target="ai-sre-test/deployment/payment",
+            parameters_hash="a" * 64,
+            idempotency_key=request.idempotency_key,
+            status=pb.MUTATION_EXECUTION_STATUS_EXECUTING,
+        )
 
 
 def _response(tool_name: str) -> pb.ReadToolResponse:
@@ -190,6 +227,60 @@ def test_generated_client_dispatches_remaining_fixed_tools() -> None:
         assert [response.tool_name for response in responses] == [
             request.tool_name for request in requests
         ]
+
+    asyncio.run(scenario())
+
+
+def test_generated_client_dispatches_typed_mutations_and_execution_query() -> None:
+    async def scenario() -> None:
+        server = grpc.aio.server()
+        gateway = RecordingGateway()
+        pb_grpc.add_ToolGatewayV1Servicer_to_server(gateway, server)  # type: ignore[no-untyped-call]
+        port = server.add_insecure_port("127.0.0.1:0")
+        await server.start()
+        client = GrpcToolClient(f"127.0.0.1:{port}", "token", actor_id="service")
+        common = {
+            "investigation_id": "inv-1",
+            "trace_id": "0123456789abcdef",
+            "actor_id": "approver-1",
+            "approval_token": "approval-token",
+        }
+        requests = [
+            MutationRequest(
+                **common,
+                idempotency_key="idem-restart-1",
+                tool_name="kubernetes.restart_deployment",
+                parameters={"namespace": "ai-sre-test", "name": "payment"},
+            ),
+            MutationRequest(
+                **common,
+                idempotency_key="idem-scale-001",
+                tool_name="kubernetes.scale_deployment",
+                parameters={"namespace": "ai-sre-test", "name": "payment", "replicas": 3},
+            ),
+            MutationRequest(
+                **common,
+                idempotency_key="idem-rollback1",
+                tool_name="kubernetes.rollback_deployment",
+                parameters={"namespace": "ai-sre-test", "name": "payment", "revision": 1},
+            ),
+        ]
+        try:
+            responses = [await client.execute_mutation(request) for request in requests]
+            existing = await client.get_mutation_execution(
+                "inv-1", "0123456789abcdef", "idem-scale-001"
+            )
+        finally:
+            await client.close()
+            await server.stop(grace=0)
+        assert [item.status for item in responses] == ["SUCCEEDED"] * 3
+        assert [item.WhichOneof("operation") for item in gateway.mutations] == [
+            "restart_deployment",
+            "scale_deployment",
+            "rollback_deployment",
+        ]
+        assert all(item.context.caller.role == "approver" for item in gateway.mutations)
+        assert existing.status == "EXECUTING"
 
     asyncio.run(scenario())
 

@@ -277,6 +277,96 @@ pre,
   grid-template-columns: minmax(280px, 0.75fr) minmax(420px, 1.25fr);
   gap: 18px;
 }
+.remediation-panel {
+  margin-top: 18px;
+}
+.remediation-compose {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  padding: 18px 20px;
+  border-bottom: 1px solid #1c3031;
+}
+.remediation-compose label {
+  display: grid;
+  gap: 7px;
+  color: #718788;
+  font-size: 11px;
+}
+.remediation-compose select,
+.remediation-compose input {
+  min-width: 180px;
+  padding: 9px 10px;
+  border: 1px solid #294443;
+  border-radius: 6px;
+  color: #dce8e8;
+  background: #0b1d1e;
+}
+.remediation-compose button,
+.approval-actions button {
+  padding: 9px 12px;
+  border: 1px solid #397369;
+  border-radius: 6px;
+  color: #8ce6d0;
+  background: #102b29;
+  cursor: pointer;
+}
+.remediation-compose button:disabled,
+.approval-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.approval-list {
+  display: grid;
+}
+.approval-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  padding: 18px 20px;
+  border-bottom: 1px solid #172b2c;
+}
+.approval-card strong,
+.approval-card code,
+.approval-card small {
+  display: block;
+}
+.approval-card strong {
+  color: #dfe9e8;
+  font-size: 13px;
+}
+.approval-card code {
+  margin-top: 5px;
+  color: #6bcdb8;
+  font-size: 10px;
+}
+.approval-card small {
+  margin-top: 8px;
+  color: #607879;
+  font:
+    10px "IBM Plex Mono",
+    monospace;
+}
+.approval-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.approval-actions .is-danger {
+  border-color: #643c38;
+  color: #ff9c8f;
+  background: #2c1a19;
+}
+.recovery-result {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 8px 10px;
+  color: #73dbc3;
+  background: #0d2523;
+  font:
+    10px "IBM Plex Mono",
+    monospace;
+}
 .panel {
   overflow: hidden;
   border: 1px solid #1c3031;

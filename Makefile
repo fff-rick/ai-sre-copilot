@@ -2,7 +2,7 @@ SHELL := /bin/bash
 
 .DEFAULT_GOAL := help
 
-.PHONY: help bootstrap proto proto-check format lint test test-python test-go test-web test-testbed test-integration test-kind test-stage3-restart test-stage4-postgres eval-offline eval-online eval-retrieval acceptance-stage2 acceptance-stage3 acceptance-stage4 build compose-up compose-down compose-config testbed-up testbed-down testbed-smoke testbed-validate clean
+.PHONY: help bootstrap proto proto-check format lint test test-python test-go test-web test-testbed test-integration test-kind test-stage3-restart test-stage4-postgres test-stage5-kind eval-offline eval-online eval-retrieval acceptance-stage2 acceptance-stage3 acceptance-stage4 acceptance-stage5 build compose-up compose-down compose-config testbed-up testbed-down testbed-smoke testbed-validate clean
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\n"} /^[a-zA-Z_-]+:.*?## / {printf "  %-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -75,6 +75,11 @@ eval-retrieval: ## Run the independent stage-4 Recall@K retrieval baseline
 acceptance-stage3: test lint test-stage3-restart eval-offline build compose-config ## Run the deterministic stage-3 gate
 
 acceptance-stage4: test lint test-stage4-postgres eval-retrieval build compose-config ## Run the deterministic stage-4 gate
+
+test-stage5-kind: ## Verify approval binding, idempotency, and isolated mutations
+	./scripts/verify-stage5-kind.sh
+
+acceptance-stage5: test lint proto-check build compose-config test-stage5-kind ## Run the complete stage-5 gate
 
 build: ## Build all three services
 	cd services/investigation && uv build

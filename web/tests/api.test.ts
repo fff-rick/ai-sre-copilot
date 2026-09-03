@@ -4,7 +4,13 @@ import {
   getEvidence,
   getInvestigation,
   getTimeline,
+  approveApproval,
+  executeApproval,
   listInvestigations,
+  listApprovals,
+  modifyApproval,
+  proposeApproval,
+  rejectApproval,
 } from "../src/api";
 
 describe("investigation API", () => {
@@ -46,6 +52,47 @@ describe("investigation API", () => {
     );
     await expect(getInvestigation("missing")).rejects.toThrow(
       "Request failed (404)",
+    );
+  });
+
+  it("uses bounded remediation routes and trusted identity headers", async () => {
+    const fetchMock = vi.fn(
+      (...args: [string | URL | Request, RequestInit?]) => {
+        void args;
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({}),
+        });
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const action = {
+      action_id: "act-restart-payment",
+      tool_name: "kubernetes.restart_deployment" as const,
+      namespace: "ai-sre-test",
+      name: "payment",
+      description: "restart",
+      expected_effect: "recover",
+      rollback_plan: "rollback",
+      evidence_ids: [],
+      verification_promql: "up",
+      recovery_goal: "decrease" as const,
+    };
+    await listApprovals("inv /1");
+    await proposeApproval("inv /1", action);
+    await modifyApproval("inv /1", "apr /1", action);
+    await approveApproval("inv /1", "apr /1");
+    await rejectApproval("inv /1", "apr /1");
+    await executeApproval("inv /1", "apr /1", "token", "idem-stage5-test");
+    expect(fetchMock).toHaveBeenCalledTimes(6);
+    expect(fetchMock.mock.calls[1]?.[1]?.method).toBe("POST");
+    expect(fetchMock.mock.calls[2]?.[1]?.method).toBe("PUT");
+    expect(fetchMock.mock.calls[3]?.[1]?.headers).toMatchObject({
+      "X-Actor-Role": "approver",
+    });
+    expect(String(fetchMock.mock.calls[5]?.[0])).toContain(
+      "apr%20%2F1/execute",
     );
   });
 });
