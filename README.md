@@ -2,7 +2,7 @@
 
 AI-SRE Copilot 是一个面向中小研发团队的智能故障调查与安全处置系统。它从告警出发，关联指标、日志、链路、Kubernetes 事件、发布记录和历史事故，输出带证据的根因假设、处置建议与复盘报告。
 
-项目已完成阶段 0 工程基线、阶段 1 可观测测试环境和阶段 2 Go 只读工具网关，下一步进入阶段 3（Python 调查工作流）。V1 聚焦“调查正确、证据可查、安全可控”，不追求无人值守自愈。
+项目已完成阶段 0～3。Python 调查工作流已通过确定性门禁、PostgreSQL 跨实例恢复和真实模型五故障在线验收；下一阶段进入知识检索与证据工作台。V1 聚焦“调查正确、证据可查、安全可控”，不追求无人值守自愈。
 
 ## 核心原则
 
@@ -42,14 +42,15 @@ Observable Testbed
 7. [工程基线](docs/07-engineering-baseline.md)
 8. [阶段 1 验收记录](docs/08-stage1-validation.md)
 9. [阶段 2 验收记录](docs/09-stage2-validation.md)
+10. [阶段 3 验收记录](docs/10-stage3-validation.md)
 
 ## 当前可运行基线
 
-仓库已包含三个薄服务和 PostgreSQL + pgvector 本地环境：
+仓库已包含三个服务和 PostgreSQL + pgvector 本地环境：
 
 ```text
 web/                       React + TypeScript 静态应用
-services/investigation/    FastAPI 调查服务与模型/工具端口
+services/investigation/    FastAPI + LangGraph 调查工作流与持久恢复
 services/tool-gateway/     Go 可信工具网关与只读工具注册表
 proto/                     阶段 2 的版本化契约边界
 testbed/                   阶段 1 的可观测故障环境
@@ -74,7 +75,7 @@ make compose-up
 - Tool Gateway 健康检查：<http://localhost:8081/health/ready>
 - Tool Gateway gRPC：`localhost:9091`
 
-`make compose-down` 会停止服务但保留本地数据库卷和脱敏 Artifact。当前阶段没有任何真实生产凭据、模型调用或变更工具。
+`make compose-down` 会停止服务但保留本地数据库卷和脱敏 Artifact。模型配置缺失时，健康检查仍可用于部署诊断，但创建调查返回 503，不会执行不可持久化或不可审计的降级流程。
 
 阶段 2 的完整本地门禁为：
 
@@ -83,6 +84,17 @@ make acceptance-stage2
 ```
 
 其中常规 PR 使用 Fake client-go 验证 Kubernetes 契约；阶段验收另使用临时 kind 集群验证真实 API Server，结束后删除集群。
+
+阶段 3 的确定性门禁及真实模型冒烟评测为：
+
+```bash
+make acceptance-stage3
+
+AI_SRE_MODEL_BASE_URL=https://provider.example/v1 \
+AI_SRE_MODEL_API_KEY=... \
+AI_SRE_MODEL_ID=... \
+make eval-online
+```
 
 阶段 1 的可观测测试床使用独立 Compose 项目，避免拖慢日常工程基线：
 
