@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../src/App";
@@ -113,6 +119,7 @@ function installFetch(getStatus: () => string = () => "COMPLETED") {
       const path = String(input);
       if (path.includes("/timeline")) return jsonResponse(timeline);
       if (path.includes("/evidence/")) return jsonResponse({ evidence });
+      if (path.includes("/approvals")) return jsonResponse([]);
       if (path === "/api/v1/investigations?limit=100") {
         return jsonResponse({ items: [record(getStatus())] });
       }
@@ -128,7 +135,10 @@ describe("App", () => {
     FakeEventSource.latest = null;
   });
 
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
 
   it("renders the persistent investigation, hypotheses, timeline and evidence drawer", async () => {
     installFetch();
@@ -185,6 +195,130 @@ describe("App", () => {
     render(<App />);
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "无法读取调查列表",
+    );
+  });
+
+  it("runs the approval, parameter update, execution and rejection controls", async () => {
+    let approvals: Array<Record<string, unknown>> = [];
+    let counter = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string | URL | Request, init?: RequestInit) => {
+        const path = String(input);
+        const method = init?.method ?? "GET";
+        if (path.includes("/timeline")) return jsonResponse(timeline);
+        if (path === "/api/v1/investigations?limit=100") {
+          return jsonResponse({ items: [record()] });
+        }
+        if (path.endsWith("/approvals") && method === "GET") {
+          return jsonResponse(approvals);
+        }
+        if (path.endsWith("/approvals") && method === "POST") {
+          counter += 1;
+          const body = JSON.parse(String(init?.body)) as {
+            action: Record<string, unknown>;
+          };
+          const created = {
+            approval_id: `apr-${counter}`,
+            investigation_id: "inv-stage4",
+            action: body.action,
+            target: "ai-sre-test/deployment/payment",
+            parameters_hash: "a".repeat(64),
+            risk_level: "medium",
+            status: "PENDING",
+            proposed_by: "console-investigator",
+            approved_by: null,
+            token_expires_at: null,
+          };
+          approvals = [...approvals, created];
+          return jsonResponse(created);
+        }
+        if (path.endsWith("/approve")) {
+          approvals = approvals.map((item) => ({
+            ...item,
+            status: "APPROVED",
+            approved_by: "console-approver",
+          }));
+          return jsonResponse({
+            approval: approvals[0],
+            approval_token: "approval-token",
+          });
+        }
+        if (path.endsWith("/execute")) {
+          approvals = approvals.map((item) => ({
+            ...item,
+            status: "CONSUMED",
+          }));
+          return jsonResponse({
+            execution_id: "exec-1",
+            status: "SUCCEEDED",
+            recovery_status: "RECOVERED",
+            pre_evidence: {},
+            post_evidence: {},
+          });
+        }
+        if (path.endsWith("/reject")) {
+          approvals = approvals.map((item) => ({
+            ...item,
+            status: "REJECTED",
+          }));
+          return jsonResponse(approvals.at(-1));
+        }
+        if (path.includes("/approvals/") && method === "PUT") {
+          const action = JSON.parse(String(init?.body)) as Record<
+            string,
+            unknown
+          >;
+          approvals = approvals.map((item) => ({
+            ...item,
+            action,
+            status: "PENDING",
+          }));
+          return jsonResponse(approvals[0]);
+        }
+        return jsonResponse(record());
+      }),
+    );
+    render(<App />);
+    await screen.findByText("Database connections are exhausted.");
+    fireEvent.change(screen.getByLabelText("动作"), {
+      target: { value: "scale" },
+    });
+    fireEvent.change(screen.getByLabelText("副本数"), {
+      target: { value: "4" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "提交审批" }));
+    expect(
+      await screen.findByText("PENDING · medium risk", { exact: false }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "更新参数" }));
+    await waitFor(() =>
+      expect(
+        screen.getByText("PENDING · medium risk", { exact: false }),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "批准" }));
+    expect(
+      await screen.findByRole("button", { name: "执行并验证" }),
+    ).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "执行并验证" }));
+    expect(await screen.findByText("恢复判定 · RECOVERED")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("动作"), {
+      target: { value: "rollback" },
+    });
+    fireEvent.change(screen.getByLabelText("版本号（0=上一版）"), {
+      target: { value: "0" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "提交审批" }));
+    expect(
+      await screen.findByRole("button", { name: "拒绝" }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "拒绝" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "拒绝" }),
+      ).not.toBeInTheDocument(),
     );
   });
 });

@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     embedding_model_id: str | None = None
     embedding_dimensions: int | None = Field(default=None, ge=8, le=4_096)
     embedding_timeout_seconds: float = Field(default=30, gt=0, le=300)
+    mutation_allowed_namespace: str = "ai-sre-test"
+    remediation_validation_delay_seconds: float = Field(default=2, ge=0, le=60)
 
 
 @lru_cache

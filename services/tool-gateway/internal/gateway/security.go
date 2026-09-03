@@ -157,31 +157,50 @@ func sanitizePayload(value any) ([]byte, bool, error) {
 }
 
 func validateContext(ctx context.Context, requestContext *toolgatewayv1.RequestContext, limiter *actorLimiter, authToken string) error {
-	if _, ok := ctx.Deadline(); !ok {
-		return invalid("gRPC deadline is required")
-	}
-	values := metadata.ValueFromIncomingContext(ctx, "authorization")
-	want := "Bearer " + authToken
-	if len(values) != 1 || subtle.ConstantTimeCompare([]byte(values[0]), []byte(want)) != 1 {
-		return classified(toolgatewayv1.ToolErrorCode_TOOL_ERROR_CODE_UNAUTHENTICATED, "valid gateway credentials are required", false, nil)
-	}
-	if requestContext == nil || strings.TrimSpace(requestContext.GetInvestigationId()) == "" || len(requestContext.GetInvestigationId()) > 255 {
-		return invalid("investigation_id is required")
-	}
-	if strings.TrimSpace(requestContext.GetTraceId()) == "" || len(requestContext.GetTraceId()) > 128 {
-		return invalid("trace_id is required")
-	}
-	caller := requestContext.GetCaller()
-	if caller == nil || strings.TrimSpace(caller.GetActorId()) == "" {
-		return classified(toolgatewayv1.ToolErrorCode_TOOL_ERROR_CODE_UNAUTHENTICATED, "caller identity is required", false, nil)
+	caller, err := validateBaseContext(ctx, requestContext, limiter, authToken)
+	if err != nil {
+		return err
 	}
 	if caller.GetRole() != "investigator" && caller.GetRole() != "admin" {
 		return classified(toolgatewayv1.ToolErrorCode_TOOL_ERROR_CODE_PERMISSION_DENIED, "caller role is not allowed", false, nil)
 	}
-	if !limiter.Allow(caller.GetActorId()) {
-		return classified(toolgatewayv1.ToolErrorCode_TOOL_ERROR_CODE_RATE_LIMITED, "caller rate limit exceeded", true, nil)
+	return nil
+}
+
+func validateMutationContext(ctx context.Context, requestContext *toolgatewayv1.RequestContext, limiter *actorLimiter, authToken string) error {
+	caller, err := validateBaseContext(ctx, requestContext, limiter, authToken)
+	if err != nil {
+		return err
+	}
+	if caller.GetRole() != "approver" {
+		return classified(toolgatewayv1.ToolErrorCode_TOOL_ERROR_CODE_PERMISSION_DENIED, "approver role is required for mutation", false, nil)
 	}
 	return nil
+}
+
+func validateBaseContext(ctx context.Context, requestContext *toolgatewayv1.RequestContext, limiter *actorLimiter, authToken string) (*toolgatewayv1.CallerIdentity, error) {
+	if _, ok := ctx.Deadline(); !ok {
+		return nil, invalid("gRPC deadline is required")
+	}
+	values := metadata.ValueFromIncomingContext(ctx, "authorization")
+	want := "Bearer " + authToken
+	if len(values) != 1 || subtle.ConstantTimeCompare([]byte(values[0]), []byte(want)) != 1 {
+		return nil, classified(toolgatewayv1.ToolErrorCode_TOOL_ERROR_CODE_UNAUTHENTICATED, "valid gateway credentials are required", false, nil)
+	}
+	if requestContext == nil || strings.TrimSpace(requestContext.GetInvestigationId()) == "" || len(requestContext.GetInvestigationId()) > 255 {
+		return nil, invalid("investigation_id is required")
+	}
+	if strings.TrimSpace(requestContext.GetTraceId()) == "" || len(requestContext.GetTraceId()) > 128 {
+		return nil, invalid("trace_id is required")
+	}
+	caller := requestContext.GetCaller()
+	if caller == nil || strings.TrimSpace(caller.GetActorId()) == "" {
+		return nil, classified(toolgatewayv1.ToolErrorCode_TOOL_ERROR_CODE_UNAUTHENTICATED, "caller identity is required", false, nil)
+	}
+	if !limiter.Allow(caller.GetActorId()) {
+		return nil, classified(toolgatewayv1.ToolErrorCode_TOOL_ERROR_CODE_RATE_LIMITED, "caller rate limit exceeded", true, nil)
+	}
+	return caller, nil
 }
 
 func errorCode(err error) string {

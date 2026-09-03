@@ -91,6 +91,44 @@ jobs:
       - run: go test -race ./...
       - run: go build ./cmd/server
 
+  stage5-remediation:
+    name: Stage 5 remediation security
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.6-pg18
+        env:
+          POSTGRES_DB: ai_sre
+          POSTGRES_USER: ai_sre
+          POSTGRES_PASSWORD: local-development-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ai_sre -d ai_sre"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.7"
+          cache-dependency-path: services/tool-gateway/go.sum
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.12.9"
+          enable-cache: true
+      - uses: helm/kind-action@v1.14.0
+        with:
+          install_only: true
+          version: v0.32.0
+      - run: uv sync --project services/investigation --frozen --all-groups
+      - run: cd services/investigation && uv run ruff format --check ../../scripts/verify-stage5.py
+      - run: cd services/investigation && uv run ruff check ../../scripts/verify-stage5.py
+      - run: make test-stage5-kind
+        env:
+          STAGE5_DATABASE_URL: postgresql://ai_sre:local-development-only@127.0.0.1:5432/ai_sre
+
   testbed:
     name: Observable testbed
     runs-on: ubuntu-latest

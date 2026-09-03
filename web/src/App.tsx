@@ -4,12 +4,21 @@ import {
   type Evidence,
   type InvestigationEvent,
   type InvestigationSummary,
+  type RemediationAction,
+  type RemediationApproval,
+  type RemediationExecution,
   type Status,
   type StoredInvestigation,
   getEvidence,
   getInvestigation,
   getTimeline,
   listInvestigations,
+  listApprovals,
+  proposeApproval,
+  approveApproval,
+  rejectApproval,
+  executeApproval,
+  modifyApproval,
 } from "./api";
 
 const terminal = new Set<Status>(["COMPLETED", "CANCELLED", "FAILED"]);
@@ -34,6 +43,9 @@ function statusLabel(status: Status) {
     VERIFYING: "验证假设",
     RECOMMENDING: "形成建议",
     REPORTING: "生成报告",
+    WAITING_APPROVAL: "等待审批",
+    EXECUTING: "执行变更",
+    VALIDATING: "验证恢复",
     COMPLETED: "调查完成",
     CANCELLED: "已取消",
     FAILED: "调查失败",
@@ -53,6 +65,18 @@ export function App() {
     "live" | "reconnecting" | "stored"
   >("stored");
   const [error, setError] = useState<string | null>(null);
+  const [approvals, setApprovals] = useState<RemediationApproval[]>([]);
+  const [approvalTokens, setApprovalTokens] = useState<Record<string, string>>(
+    {},
+  );
+  const [executions, setExecutions] = useState<
+    Record<string, RemediationExecution>
+  >({});
+  const [actionKind, setActionKind] = useState<
+    "restart" | "scale" | "rollback"
+  >("restart");
+  const [actionValue, setActionValue] = useState(3);
+  const [remediationBusy, setRemediationBusy] = useState(false);
 
   const refreshList = useCallback(async () => {
     const items = await listInvestigations();
@@ -61,12 +85,14 @@ export function App() {
   }, []);
 
   const refreshSelected = useCallback(async (id: string) => {
-    const [record, events] = await Promise.all([
+    const [record, events, approvalItems] = await Promise.all([
       getInvestigation(id),
       getTimeline(id),
+      listApprovals(id),
     ]);
     setSelected(record);
     setTimeline(events);
+    setApprovals(approvalItems);
     return record;
   }, []);
 
@@ -148,6 +174,41 @@ export function App() {
       setEvidence(await getEvidence(selectedId, evidenceId));
     } catch {
       setError("证据片段不可用。引用可能已过期。");
+    }
+  };
+
+  const currentAction = useCallback((): RemediationAction | null => {
+    if (!selected) return null;
+    const service = selected.investigation.alert.service;
+    const base: RemediationAction = {
+      action_id: `act-${actionKind}-${service}`,
+      tool_name: `kubernetes.${actionKind}_deployment`,
+      namespace: "ai-sre-test",
+      name: service,
+      description: `${actionKind} isolated ${service} Deployment`,
+      expected_effect: "降低当前告警对应的错误指标。",
+      rollback_plan: "停止后续动作并恢复上一版本或副本配置。",
+      evidence_ids:
+        selected.report?.hypotheses[0]?.supporting_evidence_ids ?? [],
+      verification_promql: `sum(rate(http_requests_total{service="${service}",status=~"5.."}[5m]))`,
+      recovery_goal: "decrease",
+    };
+    if (actionKind === "scale") base.replicas = actionValue;
+    if (actionKind === "rollback") base.revision = actionValue;
+    return base;
+  }, [actionKind, actionValue, selected]);
+
+  const performRemediation = async (operation: () => Promise<unknown>) => {
+    if (!selectedId) return;
+    setRemediationBusy(true);
+    setError(null);
+    try {
+      await operation();
+      await Promise.all([refreshSelected(selectedId), refreshList()]);
+    } catch {
+      setError("变更操作被拒绝或执行失败，请检查审批状态与参数。 ");
+    } finally {
+      setRemediationBusy(false);
     }
   };
 
@@ -313,6 +374,183 @@ export function App() {
                   )}
                 </section>
               </div>
+
+              {selected.report && (
+                <section
+                  className="panel remediation-panel"
+                  aria-label="变更审批"
+                >
+                  <div className="panel-heading">
+                    <span>受控变更 · isolated only</span>
+                    <b>{approvals.length}</b>
+                  </div>
+                  <div className="remediation-compose">
+                    <label>
+                      动作
+                      <select
+                        value={actionKind}
+                        onChange={(event) =>
+                          setActionKind(
+                            event.target.value as
+                              "restart" | "scale" | "rollback",
+                          )
+                        }
+                      >
+                        <option value="restart">重启 Deployment</option>
+                        <option value="scale">调整副本数</option>
+                        <option value="rollback">回滚版本</option>
+                      </select>
+                    </label>
+                    {actionKind !== "restart" && (
+                      <label>
+                        {actionKind === "scale"
+                          ? "副本数"
+                          : "版本号（0=上一版）"}
+                        <input
+                          type="number"
+                          min="0"
+                          max={actionKind === "scale" ? 100 : undefined}
+                          value={actionValue}
+                          onChange={(event) =>
+                            setActionValue(Number(event.target.value))
+                          }
+                        />
+                      </label>
+                    )}
+                    <button
+                      type="button"
+                      disabled={remediationBusy}
+                      onClick={() => {
+                        const candidate = currentAction();
+                        if (candidate && selectedId) {
+                          void performRemediation(() =>
+                            proposeApproval(selectedId, candidate),
+                          );
+                        }
+                      }}
+                    >
+                      提交审批
+                    </button>
+                  </div>
+                  <div className="approval-list">
+                    {approvals.map((approval) => (
+                      <article
+                        className="approval-card"
+                        key={approval.approval_id}
+                      >
+                        <div>
+                          <strong>{approval.action.tool_name}</strong>
+                          <code>{approval.target}</code>
+                          <small>
+                            {approval.status} · {approval.risk_level} risk ·
+                            hash {approval.parameters_hash.slice(0, 12)}
+                          </small>
+                        </div>
+                        <div className="approval-actions">
+                          {approval.status === "PENDING" && (
+                            <button
+                              type="button"
+                              disabled={remediationBusy}
+                              onClick={() =>
+                                void performRemediation(async () => {
+                                  if (!selectedId) return;
+                                  const grant = await approveApproval(
+                                    selectedId,
+                                    approval.approval_id,
+                                  );
+                                  setApprovalTokens((current) => ({
+                                    ...current,
+                                    [approval.approval_id]:
+                                      grant.approval_token,
+                                  }));
+                                })
+                              }
+                            >
+                              批准
+                            </button>
+                          )}
+                          {approval.status === "APPROVED" && (
+                            <button
+                              type="button"
+                              disabled={
+                                remediationBusy ||
+                                !approvalTokens[approval.approval_id]
+                              }
+                              onClick={() =>
+                                void performRemediation(async () => {
+                                  if (!selectedId) return;
+                                  const result = await executeApproval(
+                                    selectedId,
+                                    approval.approval_id,
+                                    approvalTokens[approval.approval_id]!,
+                                    `console:${approval.approval_id}`,
+                                  );
+                                  setExecutions((current) => ({
+                                    ...current,
+                                    [approval.approval_id]: result,
+                                  }));
+                                })
+                              }
+                            >
+                              执行并验证
+                            </button>
+                          )}
+                          {(approval.status === "PENDING" ||
+                            approval.status === "APPROVED") && (
+                            <>
+                              <button
+                                type="button"
+                                disabled={remediationBusy}
+                                onClick={() => {
+                                  const candidate = currentAction();
+                                  if (candidate && selectedId) {
+                                    void performRemediation(() =>
+                                      modifyApproval(
+                                        selectedId,
+                                        approval.approval_id,
+                                        candidate,
+                                      ),
+                                    );
+                                  }
+                                }}
+                              >
+                                更新参数
+                              </button>
+                              <button
+                                className="is-danger"
+                                type="button"
+                                disabled={remediationBusy}
+                                onClick={() =>
+                                  selectedId &&
+                                  void performRemediation(() =>
+                                    rejectApproval(
+                                      selectedId,
+                                      approval.approval_id,
+                                    ),
+                                  )
+                                }
+                              >
+                                拒绝
+                              </button>
+                            </>
+                          )}
+                        </div>
+                        {executions[approval.approval_id] && (
+                          <p className="recovery-result">
+                            恢复判定 ·{" "}
+                            {executions[approval.approval_id]!.recovery_status}
+                          </p>
+                        )}
+                      </article>
+                    ))}
+                    {!approvals.length && (
+                      <p className="empty">
+                        尚无变更申请。所有操作都需要独立审批。
+                      </p>
+                    )}
+                  </div>
+                </section>
+              )}
             </>
           ) : (
             <section className="welcome-state">

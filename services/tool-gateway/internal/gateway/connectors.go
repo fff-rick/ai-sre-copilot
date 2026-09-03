@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,6 +22,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/retry"
 )
 
 type connectorResult struct {
@@ -46,6 +48,9 @@ type gitConnector interface {
 type kubernetesConnector interface {
 	GetWorkload(context.Context, string, string, string) (connectorResult, error)
 	ListEvents(context.Context, string, string, string, uint32) (connectorResult, error)
+	RestartDeployment(context.Context, string, string, time.Time) (connectorResult, error)
+	ScaleDeployment(context.Context, string, string, int32) (connectorResult, error)
+	RollbackDeployment(context.Context, string, string, int64) (connectorResult, error)
 }
 
 type httpObservabilityConnector struct {
@@ -302,6 +307,114 @@ func (c *clientGoConnector) ListEvents(ctx context.Context, namespace, kind, nam
 	}
 	return connectorResult{Data: map[string]any{"events": data}, SourceRef: "kubernetes://" + namespace + "/events"}, nil
 }
+
+func (c *clientGoConnector) RestartDeployment(ctx context.Context, namespace, name string, at time.Time) (connectorResult, error) {
+	deployments := c.client.AppsV1().Deployments(namespace)
+	var generation int64
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		item, getErr := deployments.Get(ctx, name, metav1.GetOptions{})
+		if getErr != nil {
+			return getErr
+		}
+		updated := item.DeepCopy()
+		if updated.Spec.Template.Annotations == nil {
+			updated.Spec.Template.Annotations = make(map[string]string)
+		}
+		updated.Spec.Template.Annotations["kubectl.kubernetes.io/restartedAt"] = at.UTC().Format(time.RFC3339Nano)
+		updated, updateErr := deployments.Update(ctx, updated, metav1.UpdateOptions{})
+		if updateErr == nil {
+			generation = updated.Generation
+		}
+		return updateErr
+	})
+	if err != nil {
+		return connectorResult{}, mapKubernetesError(err)
+	}
+	return connectorResult{Data: map[string]any{
+		"operation": "restart", "namespace": namespace, "name": name,
+		"generation": generation,
+	}, SourceRef: fmt.Sprintf("kubernetes://%s/deployment/%s", namespace, name)}, nil
+}
+
+func (c *clientGoConnector) ScaleDeployment(ctx context.Context, namespace, name string, replicas int32) (connectorResult, error) {
+	deployments := c.client.AppsV1().Deployments(namespace)
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		scale, getErr := deployments.GetScale(ctx, name, metav1.GetOptions{})
+		if getErr != nil {
+			return getErr
+		}
+		scale.Spec.Replicas = replicas
+		_, updateErr := deployments.UpdateScale(ctx, name, scale, metav1.UpdateOptions{})
+		return updateErr
+	})
+	if err != nil {
+		return connectorResult{}, mapKubernetesError(err)
+	}
+	return connectorResult{Data: map[string]any{
+		"operation": "scale", "namespace": namespace, "name": name,
+		"replicas": replicas,
+	}, SourceRef: fmt.Sprintf("kubernetes://%s/deployment/%s/scale", namespace, name)}, nil
+}
+
+func (c *clientGoConnector) RollbackDeployment(ctx context.Context, namespace, name string, revision int64) (connectorResult, error) {
+	deployments := c.client.AppsV1().Deployments(namespace)
+	targetRevision := revision
+	var generation int64
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		item, getErr := deployments.Get(ctx, name, metav1.GetOptions{})
+		if getErr != nil {
+			return getErr
+		}
+		replicaSets, listErr := c.client.AppsV1().ReplicaSets(namespace).List(ctx, metav1.ListOptions{LabelSelector: metav1.FormatLabelSelector(item.Spec.Selector)})
+		if listErr != nil {
+			return listErr
+		}
+		selectedRevision := revision
+		if selectedRevision == 0 {
+			current := deploymentRevision(item.Annotations)
+			for index := range replicaSets.Items {
+				candidate := deploymentRevision(replicaSets.Items[index].Annotations)
+				if candidate < current && candidate > selectedRevision {
+					selectedRevision = candidate
+				}
+			}
+		}
+		for index := range replicaSets.Items {
+			replicaSet := &replicaSets.Items[index]
+			if deploymentRevision(replicaSet.Annotations) != selectedRevision {
+				continue
+			}
+			updated := item.DeepCopy()
+			updated.Spec.Template = *replicaSet.Spec.Template.DeepCopy()
+			updated, updateErr := deployments.Update(ctx, updated, metav1.UpdateOptions{})
+			if updateErr == nil {
+				targetRevision, generation = selectedRevision, updated.Generation
+			}
+			return updateErr
+		}
+		return errDeploymentRevisionNotFound
+	})
+	if errors.Is(err, errDeploymentRevisionNotFound) {
+		return connectorResult{}, notFound("requested Deployment revision was not found")
+	}
+	if err != nil {
+		return connectorResult{}, mapKubernetesError(err)
+	}
+	return connectorResult{Data: map[string]any{
+		"operation": "rollback", "namespace": namespace, "name": name,
+		"revision": targetRevision, "generation": generation,
+	}, SourceRef: fmt.Sprintf("kubernetes://%s/deployment/%s/revisions/%d", namespace, name, targetRevision)}, nil
+}
+
+func deploymentRevision(annotations map[string]string) int64 {
+	if annotations == nil {
+		return 0
+	}
+	revision, _ := strconv.ParseInt(annotations["deployment.kubernetes.io/revision"], 10, 64)
+	return revision
+}
+
+var errDeploymentRevisionNotFound = errors.New("deployment revision not found")
 
 var kubernetesNamePattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$`)
 

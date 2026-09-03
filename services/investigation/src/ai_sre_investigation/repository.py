@@ -51,6 +51,8 @@ class InvestigationRepository(Protocol):
         payload: Mapping[str, Any],
     ) -> InvestigationEvent: ...
 
+    async def set_status(self, investigation_id: str, status: InvestigationStatus) -> None: ...
+
     async def list_events(
         self, investigation_id: str, after_event_id: int = 0, limit: int = 100
     ) -> list[InvestigationEvent]: ...
@@ -125,6 +127,11 @@ class InMemoryInvestigationRepository:
             if status not in _TERMINAL:
                 self._records[investigation_id] = record.model_copy(update={"status": status})
             return event
+
+    async def set_status(self, investigation_id: str, status: InvestigationStatus) -> None:
+        async with self._lock:
+            record = self._records[investigation_id]
+            self._records[investigation_id] = record.model_copy(update={"status": status})
 
     async def list_events(
         self, investigation_id: str, after_event_id: int = 0, limit: int = 100
@@ -296,6 +303,17 @@ class PostgresInvestigationRepository:  # pragma: no cover - exercised by stage-
         if row is None:
             raise RuntimeError("created investigation event could not be loaded")
         return _event(row)
+
+    async def set_status(self, investigation_id: str, status: InvestigationStatus) -> None:
+        async with self._pool.connection() as connection:
+            await connection.execute(
+                """
+                UPDATE investigations
+                SET status=%s, run_requested=false, updated_at=now()
+                WHERE investigation_id=%s
+                """,
+                (status, investigation_id),
+            )
 
     async def list_events(
         self, investigation_id: str, after_event_id: int = 0, limit: int = 100

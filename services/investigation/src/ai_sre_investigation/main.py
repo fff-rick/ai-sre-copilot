@@ -3,7 +3,7 @@
 import asyncio
 import json
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable
 from contextlib import asynccontextmanager
 from typing import Any, cast
 
@@ -13,17 +13,29 @@ from fastapi.responses import StreamingResponse
 from ai_sre_investigation import __version__
 from ai_sre_investigation.config import Settings, get_settings
 from ai_sre_investigation.models import (
+    ApproveRequest,
     CancelResponse,
     CreateInvestigationRequest,
     EvidenceDetailResponse,
+    ExecuteRemediationRequest,
     HealthResponse,
     InvestigationListResponse,
     InvestigationSummary,
     InvestigationTimelineResponse,
+    ProposeApprovalRequest,
 )
+from ai_sre_investigation.remediation import (
+    ApprovalGrant,
+    RemediationAction,
+    RemediationApproval,
+    RemediationAuditEvent,
+    RemediationExecution,
+)
+from ai_sre_investigation.remediation_service import RemediationService
 from ai_sre_investigation.repository import StoredInvestigation
 from ai_sre_investigation.runtime import production_service
 from ai_sre_investigation.service import InvestigationService
+from ai_sre_investigation.tool_gateway_client import ToolGatewayError
 
 
 def create_app(
@@ -245,6 +257,123 @@ def create_app(
                 raise HTTPException(status_code=404, detail="investigation not found")
         return CancelResponse(investigation_id=investigation_id, cancel_requested=changed)
 
+    @application.post(
+        "/api/v1/investigations/{investigation_id}/approvals",
+        response_model=RemediationApproval,
+        status_code=status.HTTP_202_ACCEPTED,
+        tags=["remediation"],
+    )
+    async def propose_remediation(
+        investigation_id: str,
+        request: ProposeApprovalRequest,
+        actor_id: str = Header(alias="X-Actor-ID"),
+        actor_role: str = Header(alias="X-Actor-Role"),
+    ) -> RemediationApproval:
+        remediation = _remediation(application, service)
+        return await _remediation_call(
+            remediation.propose(investigation_id, request.action, actor_id, actor_role)
+        )
+
+    @application.get(
+        "/api/v1/investigations/{investigation_id}/approvals",
+        response_model=list[RemediationApproval],
+        tags=["remediation"],
+    )
+    async def list_approvals(investigation_id: str) -> list[RemediationApproval]:
+        return await _remediation_call(
+            _remediation(application, service).list_approvals(investigation_id)
+        )
+
+    @application.post(
+        "/api/v1/investigations/{investigation_id}/approvals/{approval_id}/approve",
+        response_model=ApprovalGrant,
+        tags=["remediation"],
+    )
+    async def approve_remediation(
+        investigation_id: str,
+        approval_id: str,
+        request: ApproveRequest,
+        actor_id: str = Header(alias="X-Actor-ID"),
+        actor_role: str = Header(alias="X-Actor-Role"),
+    ) -> ApprovalGrant:
+        return await _remediation_call(
+            _remediation(application, service).approve(
+                investigation_id,
+                approval_id,
+                actor_id,
+                actor_role,
+                request.expires_in_seconds,
+            )
+        )
+
+    @application.put(
+        "/api/v1/investigations/{investigation_id}/approvals/{approval_id}",
+        response_model=RemediationApproval,
+        tags=["remediation"],
+    )
+    async def modify_remediation(
+        investigation_id: str,
+        approval_id: str,
+        action: RemediationAction,
+        actor_id: str = Header(alias="X-Actor-ID"),
+        actor_role: str = Header(alias="X-Actor-Role"),
+    ) -> RemediationApproval:
+        return await _remediation_call(
+            _remediation(application, service).modify(
+                investigation_id, approval_id, action, actor_id, actor_role
+            )
+        )
+
+    @application.post(
+        "/api/v1/investigations/{investigation_id}/approvals/{approval_id}/reject",
+        response_model=RemediationApproval,
+        tags=["remediation"],
+    )
+    async def reject_remediation(
+        investigation_id: str,
+        approval_id: str,
+        actor_id: str = Header(alias="X-Actor-ID"),
+        actor_role: str = Header(alias="X-Actor-Role"),
+    ) -> RemediationApproval:
+        return await _remediation_call(
+            _remediation(application, service).reject(
+                investigation_id, approval_id, actor_id, actor_role
+            )
+        )
+
+    @application.post(
+        "/api/v1/investigations/{investigation_id}/approvals/{approval_id}/execute",
+        response_model=RemediationExecution,
+        tags=["remediation"],
+    )
+    async def execute_remediation(
+        investigation_id: str,
+        approval_id: str,
+        request: ExecuteRemediationRequest,
+        actor_id: str = Header(alias="X-Actor-ID"),
+        actor_role: str = Header(alias="X-Actor-Role"),
+    ) -> RemediationExecution:
+        return await _remediation_call(
+            _remediation(application, service).execute(
+                investigation_id,
+                approval_id,
+                request.approval_token,
+                request.idempotency_key,
+                actor_id,
+                actor_role,
+            )
+        )
+
+    @application.get(
+        "/api/v1/investigations/{investigation_id}/remediation-audit",
+        response_model=list[RemediationAuditEvent],
+        tags=["remediation"],
+    )
+    async def remediation_audit(
+        investigation_id: str,
+    ) -> list[RemediationAuditEvent]:
+        return await _remediation_call(_remediation(application, service).audit(investigation_id))
+
     return application
 
 
@@ -255,6 +384,39 @@ def _service(application: FastAPI, fallback: InvestigationService | None) -> Inv
     if active_service is None:
         raise HTTPException(status_code=503, detail="runtime is not configured")
     return active_service
+
+
+def _remediation(application: FastAPI, fallback: InvestigationService | None) -> RemediationService:
+    remediation = _service(application, fallback).remediation
+    if remediation is None:
+        raise HTTPException(status_code=503, detail="remediation runtime is not configured")
+    return remediation
+
+
+async def _remediation_call[ResponseT](awaitable: Awaitable[ResponseT]) -> ResponseT:
+    try:
+        return await awaitable
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except ToolGatewayError as error:
+        if error.code in {
+            "TOOL_ERROR_CODE_UNAUTHENTICATED",
+            "TOOL_ERROR_CODE_PERMISSION_DENIED",
+        }:
+            http_status = 403
+        elif error.code == "TOOL_ERROR_CODE_CONFLICT":
+            http_status = 409
+        elif error.code == "TOOL_ERROR_CODE_INVALID_ARGUMENT":
+            http_status = 422
+        elif error.retryable:
+            http_status = 503
+        else:
+            http_status = 502
+        raise HTTPException(status_code=http_status, detail=error.safe_message) from error
 
 
 app = create_app()

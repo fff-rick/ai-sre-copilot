@@ -67,10 +67,62 @@ func (f *fakeSources) GetWorkload(ctx context.Context, _, _, _ string) (connecto
 func (f *fakeSources) ListEvents(ctx context.Context, _, _, _ string, _ uint32) (connectorResult, error) {
 	return f.response(ctx, "fake://kubernetes/events")
 }
+func (f *fakeSources) RestartDeployment(ctx context.Context, _, _ string, _ time.Time) (connectorResult, error) {
+	return f.response(ctx, "fake://kubernetes/restart")
+}
+func (f *fakeSources) ScaleDeployment(ctx context.Context, _, _ string, _ int32) (connectorResult, error) {
+	return f.response(ctx, "fake://kubernetes/scale")
+}
+func (f *fakeSources) RollbackDeployment(ctx context.Context, _, _ string, _ int64) (connectorResult, error) {
+	return f.response(ctx, "fake://kubernetes/rollback")
+}
 
 type memoryAuditSink struct {
 	mu     sync.Mutex
 	events []auditEvent
+}
+
+type memoryMutationAuthorizer struct {
+	token      string
+	want       mutationSpec
+	records    map[string]mutationExecution
+	authorized atomic.Int64
+}
+
+func (a *memoryMutationAuthorizer) Authorize(_ context.Context, token, key, investigationID, _ string, spec mutationSpec) (mutationExecution, bool, error) {
+	if token != a.token {
+		return mutationExecution{}, false, permissionDenied("approval token is invalid")
+	}
+	if spec.ToolName != a.want.ToolName || spec.Target != a.want.Target || spec.ParametersHash != a.want.ParametersHash {
+		return mutationExecution{}, false, permissionDenied("approval token does not match mutation parameters")
+	}
+	if record, ok := a.records[key]; ok {
+		return record, true, nil
+	}
+	a.authorized.Add(1)
+	record := mutationExecution{ExecutionID: "exec-test", ApprovalID: "apr-test", InvestigationID: investigationID, ToolName: spec.ToolName, Target: spec.Target, ParametersHash: spec.ParametersHash, IdempotencyKey: key, Status: "EXECUTING", StartedAt: time.Now()}
+	a.records[key] = record
+	return record, false, nil
+}
+
+func (a *memoryMutationAuthorizer) Finalize(_ context.Context, executionID, executionStatus string, result []byte, safeError string) (mutationExecution, error) {
+	for key, record := range a.records {
+		if record.ExecutionID == executionID {
+			now := time.Now()
+			record.Status, record.Result, record.SafeError, record.FinishedAt = executionStatus, result, safeError, &now
+			a.records[key] = record
+			return record, nil
+		}
+	}
+	return mutationExecution{}, notFound("mutation execution was not found")
+}
+
+func (a *memoryMutationAuthorizer) Get(_ context.Context, investigationID, key string) (mutationExecution, error) {
+	record, ok := a.records[key]
+	if !ok || record.InvestigationID != investigationID {
+		return mutationExecution{}, notFound("mutation execution was not found")
+	}
+	return record, nil
 }
 
 func (s *memoryAuditSink) Write(_ context.Context, event auditEvent) {
@@ -108,6 +160,38 @@ func testClient(t *testing.T, sources *fakeSources, requestsPerSecond float64, b
 	}
 	t.Cleanup(func() { _ = connection.Close() })
 	return toolgatewayv1.NewToolGatewayV1Client(connection), audit
+}
+
+func mutationTestClient(t *testing.T, sources *fakeSources, authorizer mutationAuthorizer) toolgatewayv1.ToolGatewayV1Client {
+	t.Helper()
+	audit := &memoryAuditSink{}
+	artifacts, err := newArtifactStore(t.TempDir(), 1024*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := newServer(serverOptions{
+		Observability: sources, Releases: sources, Git: sources, Kubernetes: sources,
+		Limiter: newActorLimiter(1000, 100), Audit: audit, Artifacts: artifacts,
+		InlineBytes: 1024, AuthToken: "test-token", MutationAuthorizer: authorizer,
+		AllowedNamespace: "ai-sre-test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener := bufconn.Listen(1024 * 1024)
+	grpcServer := grpc.NewServer()
+	toolgatewayv1.RegisterToolGatewayV1Server(grpcServer, server)
+	go func() { _ = grpcServer.Serve(listener) }()
+	t.Cleanup(grpcServer.Stop)
+	connection, err := grpc.NewClient("passthrough:///bufnet",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = connection.Close() })
+	return toolgatewayv1.NewToolGatewayV1Client(connection)
 }
 
 func rpcContext(t *testing.T, role string, timeout time.Duration) (context.Context, context.CancelFunc) {
@@ -286,6 +370,54 @@ func TestConcurrentCalls(t *testing.T) {
 	if sources.calls.Load() != 64 {
 		t.Fatalf("connector calls = %d, want 64", sources.calls.Load())
 	}
+}
+
+func TestApprovedMutationIsTypedBoundAndIdempotent(t *testing.T) {
+	sources := &fakeSources{result: connectorResult{Data: map[string]any{"changed": true}}}
+	want := newMutationSpec("kubernetes.scale_deployment", "ai-sre-test", "payment", map[string]any{"name": "payment", "namespace": "ai-sre-test", "replicas": int32(3)})
+	authorizer := &memoryMutationAuthorizer{token: "approval-secret", want: want, records: make(map[string]mutationExecution)}
+	client := mutationTestClient(t, sources, authorizer)
+	call := func(role, token, key string, replicas int32) (*toolgatewayv1.MutationExecution, error) {
+		ctx, cancel := rpcContext(t, role, time.Second)
+		defer cancel()
+		return client.ExecuteApprovedMutation(ctx, &toolgatewayv1.ExecuteApprovedMutationRequest{
+			Context: requestContext(role), ApprovalToken: token, IdempotencyKey: key,
+			Operation: &toolgatewayv1.ExecuteApprovedMutationRequest_ScaleDeployment{ScaleDeployment: &toolgatewayv1.ScaleDeploymentArgs{Namespace: "ai-sre-test", Name: "payment", Replicas: replicas}},
+		})
+	}
+	first, err := call("approver", "approval-secret", "idem-stage5-001", 3)
+	if err != nil || first.GetStatus() != toolgatewayv1.MutationExecutionStatus_MUTATION_EXECUTION_STATUS_SUCCEEDED || first.GetReplayed() {
+		t.Fatalf("first mutation failed: response=%+v error=%v", first, err)
+	}
+	replay, err := call("approver", "approval-secret", "idem-stage5-001", 3)
+	if err != nil || !replay.GetReplayed() || replay.GetExecutionId() != first.GetExecutionId() {
+		t.Fatalf("idempotent replay failed: response=%+v error=%v", replay, err)
+	}
+	if sources.calls.Load() != 1 || authorizer.authorized.Load() != 1 {
+		t.Fatalf("side effects=%d authorizations=%d, want one", sources.calls.Load(), authorizer.authorized.Load())
+	}
+	_, err = call("approver", "approval-secret", "idem-stage5-002", 10)
+	assertToolError(t, err, codes.PermissionDenied, toolgatewayv1.ToolErrorCode_TOOL_ERROR_CODE_PERMISSION_DENIED)
+	_, err = call("investigator", "approval-secret", "idem-stage5-003", 3)
+	assertToolError(t, err, codes.PermissionDenied, toolgatewayv1.ToolErrorCode_TOOL_ERROR_CODE_PERMISSION_DENIED)
+	_, err = call("approver", "", "idem-stage5-004", 3)
+	assertToolError(t, err, codes.PermissionDenied, toolgatewayv1.ToolErrorCode_TOOL_ERROR_CODE_PERMISSION_DENIED)
+}
+
+func TestMutationRejectsOutOfScopeAndUntypedRequests(t *testing.T) {
+	authorizer := &memoryMutationAuthorizer{token: "token", records: make(map[string]mutationExecution)}
+	client := mutationTestClient(t, &fakeSources{}, authorizer)
+	ctx, cancel := rpcContext(t, "approver", time.Second)
+	defer cancel()
+	_, err := client.ExecuteApprovedMutation(ctx, &toolgatewayv1.ExecuteApprovedMutationRequest{
+		Context: requestContext("approver"), ApprovalToken: "token", IdempotencyKey: "idem-stage5-101",
+		Operation: &toolgatewayv1.ExecuteApprovedMutationRequest_RestartDeployment{RestartDeployment: &toolgatewayv1.RestartDeploymentArgs{Namespace: "production", Name: "payment"}},
+	})
+	assertToolError(t, err, codes.PermissionDenied, toolgatewayv1.ToolErrorCode_TOOL_ERROR_CODE_PERMISSION_DENIED)
+	ctx2, cancel2 := rpcContext(t, "approver", time.Second)
+	defer cancel2()
+	_, err = client.ExecuteApprovedMutation(ctx2, &toolgatewayv1.ExecuteApprovedMutationRequest{Context: requestContext("approver"), ApprovalToken: "token", IdempotencyKey: "idem-stage5-102"})
+	assertToolError(t, err, codes.InvalidArgument, toolgatewayv1.ToolErrorCode_TOOL_ERROR_CODE_INVALID_ARGUMENT)
 }
 
 func assertToolError(t *testing.T, err error, wantStatus codes.Code, wantToolCode toolgatewayv1.ToolErrorCode) {

@@ -22,6 +22,58 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type MutationExecutionStatus int32
+
+const (
+	MutationExecutionStatus_MUTATION_EXECUTION_STATUS_UNSPECIFIED MutationExecutionStatus = 0
+	MutationExecutionStatus_MUTATION_EXECUTION_STATUS_EXECUTING   MutationExecutionStatus = 1
+	MutationExecutionStatus_MUTATION_EXECUTION_STATUS_SUCCEEDED   MutationExecutionStatus = 2
+	MutationExecutionStatus_MUTATION_EXECUTION_STATUS_FAILED      MutationExecutionStatus = 3
+)
+
+// Enum value maps for MutationExecutionStatus.
+var (
+	MutationExecutionStatus_name = map[int32]string{
+		0: "MUTATION_EXECUTION_STATUS_UNSPECIFIED",
+		1: "MUTATION_EXECUTION_STATUS_EXECUTING",
+		2: "MUTATION_EXECUTION_STATUS_SUCCEEDED",
+		3: "MUTATION_EXECUTION_STATUS_FAILED",
+	}
+	MutationExecutionStatus_value = map[string]int32{
+		"MUTATION_EXECUTION_STATUS_UNSPECIFIED": 0,
+		"MUTATION_EXECUTION_STATUS_EXECUTING":   1,
+		"MUTATION_EXECUTION_STATUS_SUCCEEDED":   2,
+		"MUTATION_EXECUTION_STATUS_FAILED":      3,
+	}
+)
+
+func (x MutationExecutionStatus) Enum() *MutationExecutionStatus {
+	p := new(MutationExecutionStatus)
+	*p = x
+	return p
+}
+
+func (x MutationExecutionStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (MutationExecutionStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_ai_sre_toolgateway_v1_tool_gateway_proto_enumTypes[0].Descriptor()
+}
+
+func (MutationExecutionStatus) Type() protoreflect.EnumType {
+	return &file_ai_sre_toolgateway_v1_tool_gateway_proto_enumTypes[0]
+}
+
+func (x MutationExecutionStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use MutationExecutionStatus.Descriptor instead.
+func (MutationExecutionStatus) EnumDescriptor() ([]byte, []int) {
+	return file_ai_sre_toolgateway_v1_tool_gateway_proto_rawDescGZIP(), []int{0}
+}
+
 type ToolErrorCode int32
 
 const (
@@ -35,21 +87,23 @@ const (
 	ToolErrorCode_TOOL_ERROR_CODE_NOT_FOUND          ToolErrorCode = 7
 	ToolErrorCode_TOOL_ERROR_CODE_RESPONSE_TOO_LARGE ToolErrorCode = 8
 	ToolErrorCode_TOOL_ERROR_CODE_INTERNAL           ToolErrorCode = 9
+	ToolErrorCode_TOOL_ERROR_CODE_CONFLICT           ToolErrorCode = 10
 )
 
 // Enum value maps for ToolErrorCode.
 var (
 	ToolErrorCode_name = map[int32]string{
-		0: "TOOL_ERROR_CODE_UNSPECIFIED",
-		1: "TOOL_ERROR_CODE_INVALID_ARGUMENT",
-		2: "TOOL_ERROR_CODE_UNAUTHENTICATED",
-		3: "TOOL_ERROR_CODE_PERMISSION_DENIED",
-		4: "TOOL_ERROR_CODE_RATE_LIMITED",
-		5: "TOOL_ERROR_CODE_DEADLINE_EXCEEDED",
-		6: "TOOL_ERROR_CODE_SOURCE_UNAVAILABLE",
-		7: "TOOL_ERROR_CODE_NOT_FOUND",
-		8: "TOOL_ERROR_CODE_RESPONSE_TOO_LARGE",
-		9: "TOOL_ERROR_CODE_INTERNAL",
+		0:  "TOOL_ERROR_CODE_UNSPECIFIED",
+		1:  "TOOL_ERROR_CODE_INVALID_ARGUMENT",
+		2:  "TOOL_ERROR_CODE_UNAUTHENTICATED",
+		3:  "TOOL_ERROR_CODE_PERMISSION_DENIED",
+		4:  "TOOL_ERROR_CODE_RATE_LIMITED",
+		5:  "TOOL_ERROR_CODE_DEADLINE_EXCEEDED",
+		6:  "TOOL_ERROR_CODE_SOURCE_UNAVAILABLE",
+		7:  "TOOL_ERROR_CODE_NOT_FOUND",
+		8:  "TOOL_ERROR_CODE_RESPONSE_TOO_LARGE",
+		9:  "TOOL_ERROR_CODE_INTERNAL",
+		10: "TOOL_ERROR_CODE_CONFLICT",
 	}
 	ToolErrorCode_value = map[string]int32{
 		"TOOL_ERROR_CODE_UNSPECIFIED":        0,
@@ -62,6 +116,7 @@ var (
 		"TOOL_ERROR_CODE_NOT_FOUND":          7,
 		"TOOL_ERROR_CODE_RESPONSE_TOO_LARGE": 8,
 		"TOOL_ERROR_CODE_INTERNAL":           9,
+		"TOOL_ERROR_CODE_CONFLICT":           10,
 	}
 )
 
@@ -76,11 +131,11 @@ func (x ToolErrorCode) String() string {
 }
 
 func (ToolErrorCode) Descriptor() protoreflect.EnumDescriptor {
-	return file_ai_sre_toolgateway_v1_tool_gateway_proto_enumTypes[0].Descriptor()
+	return file_ai_sre_toolgateway_v1_tool_gateway_proto_enumTypes[1].Descriptor()
 }
 
 func (ToolErrorCode) Type() protoreflect.EnumType {
-	return &file_ai_sre_toolgateway_v1_tool_gateway_proto_enumTypes[0]
+	return &file_ai_sre_toolgateway_v1_tool_gateway_proto_enumTypes[1]
 }
 
 func (x ToolErrorCode) Number() protoreflect.EnumNumber {
@@ -89,7 +144,7 @@ func (x ToolErrorCode) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ToolErrorCode.Descriptor instead.
 func (ToolErrorCode) EnumDescriptor() ([]byte, []int) {
-	return file_ai_sre_toolgateway_v1_tool_gateway_proto_rawDescGZIP(), []int{0}
+	return file_ai_sre_toolgateway_v1_tool_gateway_proto_rawDescGZIP(), []int{1}
 }
 
 type CallerIdentity struct {
@@ -1392,6 +1447,494 @@ func (x *ReadToolResponse) GetRedacted() bool {
 	return false
 }
 
+type RestartDeploymentArgs struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Namespace     string                 `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RestartDeploymentArgs) Reset() {
+	*x = RestartDeploymentArgs{}
+	mi := &file_ai_sre_toolgateway_v1_tool_gateway_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RestartDeploymentArgs) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RestartDeploymentArgs) ProtoMessage() {}
+
+func (x *RestartDeploymentArgs) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_sre_toolgateway_v1_tool_gateway_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RestartDeploymentArgs.ProtoReflect.Descriptor instead.
+func (*RestartDeploymentArgs) Descriptor() ([]byte, []int) {
+	return file_ai_sre_toolgateway_v1_tool_gateway_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *RestartDeploymentArgs) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *RestartDeploymentArgs) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type ScaleDeploymentArgs struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Namespace     string                 `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Replicas      int32                  `protobuf:"varint,3,opt,name=replicas,proto3" json:"replicas,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScaleDeploymentArgs) Reset() {
+	*x = ScaleDeploymentArgs{}
+	mi := &file_ai_sre_toolgateway_v1_tool_gateway_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScaleDeploymentArgs) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScaleDeploymentArgs) ProtoMessage() {}
+
+func (x *ScaleDeploymentArgs) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_sre_toolgateway_v1_tool_gateway_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScaleDeploymentArgs.ProtoReflect.Descriptor instead.
+func (*ScaleDeploymentArgs) Descriptor() ([]byte, []int) {
+	return file_ai_sre_toolgateway_v1_tool_gateway_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *ScaleDeploymentArgs) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *ScaleDeploymentArgs) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ScaleDeploymentArgs) GetReplicas() int32 {
+	if x != nil {
+		return x.Replicas
+	}
+	return 0
+}
+
+type RollbackDeploymentArgs struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Namespace     string                 `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Revision      int64                  `protobuf:"varint,3,opt,name=revision,proto3" json:"revision,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RollbackDeploymentArgs) Reset() {
+	*x = RollbackDeploymentArgs{}
+	mi := &file_ai_sre_toolgateway_v1_tool_gateway_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RollbackDeploymentArgs) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RollbackDeploymentArgs) ProtoMessage() {}
+
+func (x *RollbackDeploymentArgs) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_sre_toolgateway_v1_tool_gateway_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RollbackDeploymentArgs.ProtoReflect.Descriptor instead.
+func (*RollbackDeploymentArgs) Descriptor() ([]byte, []int) {
+	return file_ai_sre_toolgateway_v1_tool_gateway_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *RollbackDeploymentArgs) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *RollbackDeploymentArgs) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *RollbackDeploymentArgs) GetRevision() int64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+type ExecuteApprovedMutationRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Context        *RequestContext        `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
+	ApprovalToken  string                 `protobuf:"bytes,2,opt,name=approval_token,json=approvalToken,proto3" json:"approval_token,omitempty"`
+	IdempotencyKey string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	// Types that are valid to be assigned to Operation:
+	//
+	//	*ExecuteApprovedMutationRequest_RestartDeployment
+	//	*ExecuteApprovedMutationRequest_ScaleDeployment
+	//	*ExecuteApprovedMutationRequest_RollbackDeployment
+	Operation     isExecuteApprovedMutationRequest_Operation `protobuf_oneof:"operation"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExecuteApprovedMutationRequest) Reset() {
+	*x = ExecuteApprovedMutationRequest{}
+	mi := &file_ai_sre_toolgateway_v1_tool_gateway_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExecuteApprovedMutationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExecuteApprovedMutationRequest) ProtoMessage() {}
+
+func (x *ExecuteApprovedMutationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_sre_toolgateway_v1_tool_gateway_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExecuteApprovedMutationRequest.ProtoReflect.Descriptor instead.
+func (*ExecuteApprovedMutationRequest) Descriptor() ([]byte, []int) {
+	return file_ai_sre_toolgateway_v1_tool_gateway_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *ExecuteApprovedMutationRequest) GetContext() *RequestContext {
+	if x != nil {
+		return x.Context
+	}
+	return nil
+}
+
+func (x *ExecuteApprovedMutationRequest) GetApprovalToken() string {
+	if x != nil {
+		return x.ApprovalToken
+	}
+	return ""
+}
+
+func (x *ExecuteApprovedMutationRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *ExecuteApprovedMutationRequest) GetOperation() isExecuteApprovedMutationRequest_Operation {
+	if x != nil {
+		return x.Operation
+	}
+	return nil
+}
+
+func (x *ExecuteApprovedMutationRequest) GetRestartDeployment() *RestartDeploymentArgs {
+	if x != nil {
+		if x, ok := x.Operation.(*ExecuteApprovedMutationRequest_RestartDeployment); ok {
+			return x.RestartDeployment
+		}
+	}
+	return nil
+}
+
+func (x *ExecuteApprovedMutationRequest) GetScaleDeployment() *ScaleDeploymentArgs {
+	if x != nil {
+		if x, ok := x.Operation.(*ExecuteApprovedMutationRequest_ScaleDeployment); ok {
+			return x.ScaleDeployment
+		}
+	}
+	return nil
+}
+
+func (x *ExecuteApprovedMutationRequest) GetRollbackDeployment() *RollbackDeploymentArgs {
+	if x != nil {
+		if x, ok := x.Operation.(*ExecuteApprovedMutationRequest_RollbackDeployment); ok {
+			return x.RollbackDeployment
+		}
+	}
+	return nil
+}
+
+type isExecuteApprovedMutationRequest_Operation interface {
+	isExecuteApprovedMutationRequest_Operation()
+}
+
+type ExecuteApprovedMutationRequest_RestartDeployment struct {
+	RestartDeployment *RestartDeploymentArgs `protobuf:"bytes,4,opt,name=restart_deployment,json=restartDeployment,proto3,oneof"`
+}
+
+type ExecuteApprovedMutationRequest_ScaleDeployment struct {
+	ScaleDeployment *ScaleDeploymentArgs `protobuf:"bytes,5,opt,name=scale_deployment,json=scaleDeployment,proto3,oneof"`
+}
+
+type ExecuteApprovedMutationRequest_RollbackDeployment struct {
+	RollbackDeployment *RollbackDeploymentArgs `protobuf:"bytes,6,opt,name=rollback_deployment,json=rollbackDeployment,proto3,oneof"`
+}
+
+func (*ExecuteApprovedMutationRequest_RestartDeployment) isExecuteApprovedMutationRequest_Operation() {
+}
+
+func (*ExecuteApprovedMutationRequest_ScaleDeployment) isExecuteApprovedMutationRequest_Operation() {}
+
+func (*ExecuteApprovedMutationRequest_RollbackDeployment) isExecuteApprovedMutationRequest_Operation() {
+}
+
+type GetMutationExecutionRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Context        *RequestContext        `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
+	IdempotencyKey string                 `protobuf:"bytes,2,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *GetMutationExecutionRequest) Reset() {
+	*x = GetMutationExecutionRequest{}
+	mi := &file_ai_sre_toolgateway_v1_tool_gateway_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetMutationExecutionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetMutationExecutionRequest) ProtoMessage() {}
+
+func (x *GetMutationExecutionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_sre_toolgateway_v1_tool_gateway_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetMutationExecutionRequest.ProtoReflect.Descriptor instead.
+func (*GetMutationExecutionRequest) Descriptor() ([]byte, []int) {
+	return file_ai_sre_toolgateway_v1_tool_gateway_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *GetMutationExecutionRequest) GetContext() *RequestContext {
+	if x != nil {
+		return x.Context
+	}
+	return nil
+}
+
+func (x *GetMutationExecutionRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+type MutationExecution struct {
+	state           protoimpl.MessageState  `protogen:"open.v1"`
+	ExecutionId     string                  `protobuf:"bytes,1,opt,name=execution_id,json=executionId,proto3" json:"execution_id,omitempty"`
+	ApprovalId      string                  `protobuf:"bytes,2,opt,name=approval_id,json=approvalId,proto3" json:"approval_id,omitempty"`
+	InvestigationId string                  `protobuf:"bytes,3,opt,name=investigation_id,json=investigationId,proto3" json:"investigation_id,omitempty"`
+	ToolName        string                  `protobuf:"bytes,4,opt,name=tool_name,json=toolName,proto3" json:"tool_name,omitempty"`
+	Target          string                  `protobuf:"bytes,5,opt,name=target,proto3" json:"target,omitempty"`
+	ParametersHash  string                  `protobuf:"bytes,6,opt,name=parameters_hash,json=parametersHash,proto3" json:"parameters_hash,omitempty"`
+	IdempotencyKey  string                  `protobuf:"bytes,7,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	Status          MutationExecutionStatus `protobuf:"varint,8,opt,name=status,proto3,enum=ai.sre.toolgateway.v1.MutationExecutionStatus" json:"status,omitempty"`
+	JsonPayload     []byte                  `protobuf:"bytes,9,opt,name=json_payload,json=jsonPayload,proto3" json:"json_payload,omitempty"`
+	SafeError       string                  `protobuf:"bytes,10,opt,name=safe_error,json=safeError,proto3" json:"safe_error,omitempty"`
+	Replayed        bool                    `protobuf:"varint,11,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	StartedAt       *timestamppb.Timestamp  `protobuf:"bytes,12,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	FinishedAt      *timestamppb.Timestamp  `protobuf:"bytes,13,opt,name=finished_at,json=finishedAt,proto3" json:"finished_at,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *MutationExecution) Reset() {
+	*x = MutationExecution{}
+	mi := &file_ai_sre_toolgateway_v1_tool_gateway_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MutationExecution) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MutationExecution) ProtoMessage() {}
+
+func (x *MutationExecution) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_sre_toolgateway_v1_tool_gateway_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MutationExecution.ProtoReflect.Descriptor instead.
+func (*MutationExecution) Descriptor() ([]byte, []int) {
+	return file_ai_sre_toolgateway_v1_tool_gateway_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *MutationExecution) GetExecutionId() string {
+	if x != nil {
+		return x.ExecutionId
+	}
+	return ""
+}
+
+func (x *MutationExecution) GetApprovalId() string {
+	if x != nil {
+		return x.ApprovalId
+	}
+	return ""
+}
+
+func (x *MutationExecution) GetInvestigationId() string {
+	if x != nil {
+		return x.InvestigationId
+	}
+	return ""
+}
+
+func (x *MutationExecution) GetToolName() string {
+	if x != nil {
+		return x.ToolName
+	}
+	return ""
+}
+
+func (x *MutationExecution) GetTarget() string {
+	if x != nil {
+		return x.Target
+	}
+	return ""
+}
+
+func (x *MutationExecution) GetParametersHash() string {
+	if x != nil {
+		return x.ParametersHash
+	}
+	return ""
+}
+
+func (x *MutationExecution) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *MutationExecution) GetStatus() MutationExecutionStatus {
+	if x != nil {
+		return x.Status
+	}
+	return MutationExecutionStatus_MUTATION_EXECUTION_STATUS_UNSPECIFIED
+}
+
+func (x *MutationExecution) GetJsonPayload() []byte {
+	if x != nil {
+		return x.JsonPayload
+	}
+	return nil
+}
+
+func (x *MutationExecution) GetSafeError() string {
+	if x != nil {
+		return x.SafeError
+	}
+	return ""
+}
+
+func (x *MutationExecution) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
+func (x *MutationExecution) GetStartedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StartedAt
+	}
+	return nil
+}
+
+func (x *MutationExecution) GetFinishedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.FinishedAt
+	}
+	return nil
+}
+
 // ToolError is attached as a gRPC rich error detail. Its message is safe for
 // callers and never contains credentials or raw upstream response bodies.
 type ToolError struct {
@@ -1405,7 +1948,7 @@ type ToolError struct {
 
 func (x *ToolError) Reset() {
 	*x = ToolError{}
-	mi := &file_ai_sre_toolgateway_v1_tool_gateway_proto_msgTypes[23]
+	mi := &file_ai_sre_toolgateway_v1_tool_gateway_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1417,7 +1960,7 @@ func (x *ToolError) String() string {
 func (*ToolError) ProtoMessage() {}
 
 func (x *ToolError) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_sre_toolgateway_v1_tool_gateway_proto_msgTypes[23]
+	mi := &file_ai_sre_toolgateway_v1_tool_gateway_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1430,7 +1973,7 @@ func (x *ToolError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ToolError.ProtoReflect.Descriptor instead.
 func (*ToolError) Descriptor() ([]byte, []int) {
-	return file_ai_sre_toolgateway_v1_tool_gateway_proto_rawDescGZIP(), []int{23}
+	return file_ai_sre_toolgateway_v1_tool_gateway_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *ToolError) GetCode() ToolErrorCode {
@@ -1542,11 +2085,57 @@ const file_ai_sre_toolgateway_v1_tool_gateway_proto_rawDesc = "" +
 	"source_ref\x18\x02 \x01(\tR\tsourceRef\x12!\n" +
 	"\fjson_payload\x18\x03 \x01(\fR\vjsonPayload\x12D\n" +
 	"\bartifact\x18\x04 \x01(\v2(.ai.sre.toolgateway.v1.ArtifactReferenceR\bartifact\x12\x1a\n" +
-	"\bredacted\x18\x05 \x01(\bR\bredacted\"\x86\x01\n" +
+	"\bredacted\x18\x05 \x01(\bR\bredacted\"I\n" +
+	"\x15RestartDeploymentArgs\x12\x1c\n" +
+	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"c\n" +
+	"\x13ScaleDeploymentArgs\x12\x1c\n" +
+	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1a\n" +
+	"\breplicas\x18\x03 \x01(\x05R\breplicas\"f\n" +
+	"\x16RollbackDeploymentArgs\x12\x1c\n" +
+	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1a\n" +
+	"\brevision\x18\x03 \x01(\x03R\brevision\"\xd8\x03\n" +
+	"\x1eExecuteApprovedMutationRequest\x12?\n" +
+	"\acontext\x18\x01 \x01(\v2%.ai.sre.toolgateway.v1.RequestContextR\acontext\x12%\n" +
+	"\x0eapproval_token\x18\x02 \x01(\tR\rapprovalToken\x12'\n" +
+	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\x12]\n" +
+	"\x12restart_deployment\x18\x04 \x01(\v2,.ai.sre.toolgateway.v1.RestartDeploymentArgsH\x00R\x11restartDeployment\x12W\n" +
+	"\x10scale_deployment\x18\x05 \x01(\v2*.ai.sre.toolgateway.v1.ScaleDeploymentArgsH\x00R\x0fscaleDeployment\x12`\n" +
+	"\x13rollback_deployment\x18\x06 \x01(\v2-.ai.sre.toolgateway.v1.RollbackDeploymentArgsH\x00R\x12rollbackDeploymentB\v\n" +
+	"\toperation\"\x87\x01\n" +
+	"\x1bGetMutationExecutionRequest\x12?\n" +
+	"\acontext\x18\x01 \x01(\v2%.ai.sre.toolgateway.v1.RequestContextR\acontext\x12'\n" +
+	"\x0fidempotency_key\x18\x02 \x01(\tR\x0eidempotencyKey\"\xa7\x04\n" +
+	"\x11MutationExecution\x12!\n" +
+	"\fexecution_id\x18\x01 \x01(\tR\vexecutionId\x12\x1f\n" +
+	"\vapproval_id\x18\x02 \x01(\tR\n" +
+	"approvalId\x12)\n" +
+	"\x10investigation_id\x18\x03 \x01(\tR\x0finvestigationId\x12\x1b\n" +
+	"\ttool_name\x18\x04 \x01(\tR\btoolName\x12\x16\n" +
+	"\x06target\x18\x05 \x01(\tR\x06target\x12'\n" +
+	"\x0fparameters_hash\x18\x06 \x01(\tR\x0eparametersHash\x12'\n" +
+	"\x0fidempotency_key\x18\a \x01(\tR\x0eidempotencyKey\x12F\n" +
+	"\x06status\x18\b \x01(\x0e2..ai.sre.toolgateway.v1.MutationExecutionStatusR\x06status\x12!\n" +
+	"\fjson_payload\x18\t \x01(\fR\vjsonPayload\x12\x1d\n" +
+	"\n" +
+	"safe_error\x18\n" +
+	" \x01(\tR\tsafeError\x12\x1a\n" +
+	"\breplayed\x18\v \x01(\bR\breplayed\x129\n" +
+	"\n" +
+	"started_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x12;\n" +
+	"\vfinished_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"finishedAt\"\x86\x01\n" +
 	"\tToolError\x128\n" +
 	"\x04code\x18\x01 \x01(\x0e2$.ai.sre.toolgateway.v1.ToolErrorCodeR\x04code\x12!\n" +
 	"\fsafe_message\x18\x02 \x01(\tR\vsafeMessage\x12\x1c\n" +
-	"\tretryable\x18\x03 \x01(\bR\tretryable*\xf8\x02\n" +
+	"\tretryable\x18\x03 \x01(\bR\tretryable*\xbc\x01\n" +
+	"\x17MutationExecutionStatus\x12)\n" +
+	"%MUTATION_EXECUTION_STATUS_UNSPECIFIED\x10\x00\x12'\n" +
+	"#MUTATION_EXECUTION_STATUS_EXECUTING\x10\x01\x12'\n" +
+	"#MUTATION_EXECUTION_STATUS_SUCCEEDED\x10\x02\x12$\n" +
+	" MUTATION_EXECUTION_STATUS_FAILED\x10\x03*\x96\x03\n" +
 	"\rToolErrorCode\x12\x1f\n" +
 	"\x1bTOOL_ERROR_CODE_UNSPECIFIED\x10\x00\x12$\n" +
 	" TOOL_ERROR_CODE_INVALID_ARGUMENT\x10\x01\x12#\n" +
@@ -1557,7 +2146,9 @@ const file_ai_sre_toolgateway_v1_tool_gateway_proto_rawDesc = "" +
 	"\"TOOL_ERROR_CODE_SOURCE_UNAVAILABLE\x10\x06\x12\x1d\n" +
 	"\x19TOOL_ERROR_CODE_NOT_FOUND\x10\a\x12&\n" +
 	"\"TOOL_ERROR_CODE_RESPONSE_TOO_LARGE\x10\b\x12\x1c\n" +
-	"\x18TOOL_ERROR_CODE_INTERNAL\x10\t2\xc5\a\n" +
+	"\x18TOOL_ERROR_CODE_INTERNAL\x10\t\x12\x1c\n" +
+	"\x18TOOL_ERROR_CODE_CONFLICT\x10\n" +
+	"2\xb7\t\n" +
 	"\rToolGatewayV1\x12^\n" +
 	"\tListTools\x12'.ai.sre.toolgateway.v1.ListToolsRequest\x1a(.ai.sre.toolgateway.v1.ListToolsResponse\x12i\n" +
 	"\x0fQueryPrometheus\x12-.ai.sre.toolgateway.v1.QueryPrometheusRequest\x1a'.ai.sre.toolgateway.v1.ReadToolResponse\x12]\n" +
@@ -1567,7 +2158,9 @@ const file_ai_sre_toolgateway_v1_tool_gateway_proto_rawDesc = "" +
 	"\fListReleases\x12*.ai.sre.toolgateway.v1.ListReleasesRequest\x1a'.ai.sre.toolgateway.v1.ReadToolResponse\x12c\n" +
 	"\fGetGitCommit\x12*.ai.sre.toolgateway.v1.GetGitCommitRequest\x1a'.ai.sre.toolgateway.v1.ReadToolResponse\x12u\n" +
 	"\x15GetKubernetesWorkload\x123.ai.sre.toolgateway.v1.GetKubernetesWorkloadRequest\x1a'.ai.sre.toolgateway.v1.ReadToolResponse\x12s\n" +
-	"\x14ListKubernetesEvents\x122.ai.sre.toolgateway.v1.ListKubernetesEventsRequest\x1a'.ai.sre.toolgateway.v1.ReadToolResponseBKZIai-sre-copilot.local/tool-gateway/gen/ai/sre/toolgateway/v1;toolgatewayv1b\x06proto3"
+	"\x14ListKubernetesEvents\x122.ai.sre.toolgateway.v1.ListKubernetesEventsRequest\x1a'.ai.sre.toolgateway.v1.ReadToolResponse\x12z\n" +
+	"\x17ExecuteApprovedMutation\x125.ai.sre.toolgateway.v1.ExecuteApprovedMutationRequest\x1a(.ai.sre.toolgateway.v1.MutationExecution\x12t\n" +
+	"\x14GetMutationExecution\x122.ai.sre.toolgateway.v1.GetMutationExecutionRequest\x1a(.ai.sre.toolgateway.v1.MutationExecutionBKZIai-sre-copilot.local/tool-gateway/gen/ai/sre/toolgateway/v1;toolgatewayv1b\x06proto3"
 
 var (
 	file_ai_sre_toolgateway_v1_tool_gateway_proto_rawDescOnce sync.Once
@@ -1581,88 +2174,107 @@ func file_ai_sre_toolgateway_v1_tool_gateway_proto_rawDescGZIP() []byte {
 	return file_ai_sre_toolgateway_v1_tool_gateway_proto_rawDescData
 }
 
-var file_ai_sre_toolgateway_v1_tool_gateway_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_ai_sre_toolgateway_v1_tool_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
+var file_ai_sre_toolgateway_v1_tool_gateway_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_ai_sre_toolgateway_v1_tool_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_ai_sre_toolgateway_v1_tool_gateway_proto_goTypes = []any{
-	(ToolErrorCode)(0),                   // 0: ai.sre.toolgateway.v1.ToolErrorCode
-	(*CallerIdentity)(nil),               // 1: ai.sre.toolgateway.v1.CallerIdentity
-	(*RequestContext)(nil),               // 2: ai.sre.toolgateway.v1.RequestContext
-	(*ListToolsRequest)(nil),             // 3: ai.sre.toolgateway.v1.ListToolsRequest
-	(*ToolDescriptor)(nil),               // 4: ai.sre.toolgateway.v1.ToolDescriptor
-	(*ListToolsResponse)(nil),            // 5: ai.sre.toolgateway.v1.ListToolsResponse
-	(*QueryPrometheusArgs)(nil),          // 6: ai.sre.toolgateway.v1.QueryPrometheusArgs
-	(*QueryPrometheusRequest)(nil),       // 7: ai.sre.toolgateway.v1.QueryPrometheusRequest
-	(*QueryLokiArgs)(nil),                // 8: ai.sre.toolgateway.v1.QueryLokiArgs
-	(*QueryLokiRequest)(nil),             // 9: ai.sre.toolgateway.v1.QueryLokiRequest
-	(*GetTempoTraceArgs)(nil),            // 10: ai.sre.toolgateway.v1.GetTempoTraceArgs
-	(*GetTempoTraceRequest)(nil),         // 11: ai.sre.toolgateway.v1.GetTempoTraceRequest
-	(*SearchTempoTracesArgs)(nil),        // 12: ai.sre.toolgateway.v1.SearchTempoTracesArgs
-	(*SearchTempoTracesRequest)(nil),     // 13: ai.sre.toolgateway.v1.SearchTempoTracesRequest
-	(*ListReleasesArgs)(nil),             // 14: ai.sre.toolgateway.v1.ListReleasesArgs
-	(*ListReleasesRequest)(nil),          // 15: ai.sre.toolgateway.v1.ListReleasesRequest
-	(*GetGitCommitArgs)(nil),             // 16: ai.sre.toolgateway.v1.GetGitCommitArgs
-	(*GetGitCommitRequest)(nil),          // 17: ai.sre.toolgateway.v1.GetGitCommitRequest
-	(*GetKubernetesWorkloadArgs)(nil),    // 18: ai.sre.toolgateway.v1.GetKubernetesWorkloadArgs
-	(*GetKubernetesWorkloadRequest)(nil), // 19: ai.sre.toolgateway.v1.GetKubernetesWorkloadRequest
-	(*ListKubernetesEventsArgs)(nil),     // 20: ai.sre.toolgateway.v1.ListKubernetesEventsArgs
-	(*ListKubernetesEventsRequest)(nil),  // 21: ai.sre.toolgateway.v1.ListKubernetesEventsRequest
-	(*ArtifactReference)(nil),            // 22: ai.sre.toolgateway.v1.ArtifactReference
-	(*ReadToolResponse)(nil),             // 23: ai.sre.toolgateway.v1.ReadToolResponse
-	(*ToolError)(nil),                    // 24: ai.sre.toolgateway.v1.ToolError
-	(*timestamppb.Timestamp)(nil),        // 25: google.protobuf.Timestamp
+	(MutationExecutionStatus)(0),           // 0: ai.sre.toolgateway.v1.MutationExecutionStatus
+	(ToolErrorCode)(0),                     // 1: ai.sre.toolgateway.v1.ToolErrorCode
+	(*CallerIdentity)(nil),                 // 2: ai.sre.toolgateway.v1.CallerIdentity
+	(*RequestContext)(nil),                 // 3: ai.sre.toolgateway.v1.RequestContext
+	(*ListToolsRequest)(nil),               // 4: ai.sre.toolgateway.v1.ListToolsRequest
+	(*ToolDescriptor)(nil),                 // 5: ai.sre.toolgateway.v1.ToolDescriptor
+	(*ListToolsResponse)(nil),              // 6: ai.sre.toolgateway.v1.ListToolsResponse
+	(*QueryPrometheusArgs)(nil),            // 7: ai.sre.toolgateway.v1.QueryPrometheusArgs
+	(*QueryPrometheusRequest)(nil),         // 8: ai.sre.toolgateway.v1.QueryPrometheusRequest
+	(*QueryLokiArgs)(nil),                  // 9: ai.sre.toolgateway.v1.QueryLokiArgs
+	(*QueryLokiRequest)(nil),               // 10: ai.sre.toolgateway.v1.QueryLokiRequest
+	(*GetTempoTraceArgs)(nil),              // 11: ai.sre.toolgateway.v1.GetTempoTraceArgs
+	(*GetTempoTraceRequest)(nil),           // 12: ai.sre.toolgateway.v1.GetTempoTraceRequest
+	(*SearchTempoTracesArgs)(nil),          // 13: ai.sre.toolgateway.v1.SearchTempoTracesArgs
+	(*SearchTempoTracesRequest)(nil),       // 14: ai.sre.toolgateway.v1.SearchTempoTracesRequest
+	(*ListReleasesArgs)(nil),               // 15: ai.sre.toolgateway.v1.ListReleasesArgs
+	(*ListReleasesRequest)(nil),            // 16: ai.sre.toolgateway.v1.ListReleasesRequest
+	(*GetGitCommitArgs)(nil),               // 17: ai.sre.toolgateway.v1.GetGitCommitArgs
+	(*GetGitCommitRequest)(nil),            // 18: ai.sre.toolgateway.v1.GetGitCommitRequest
+	(*GetKubernetesWorkloadArgs)(nil),      // 19: ai.sre.toolgateway.v1.GetKubernetesWorkloadArgs
+	(*GetKubernetesWorkloadRequest)(nil),   // 20: ai.sre.toolgateway.v1.GetKubernetesWorkloadRequest
+	(*ListKubernetesEventsArgs)(nil),       // 21: ai.sre.toolgateway.v1.ListKubernetesEventsArgs
+	(*ListKubernetesEventsRequest)(nil),    // 22: ai.sre.toolgateway.v1.ListKubernetesEventsRequest
+	(*ArtifactReference)(nil),              // 23: ai.sre.toolgateway.v1.ArtifactReference
+	(*ReadToolResponse)(nil),               // 24: ai.sre.toolgateway.v1.ReadToolResponse
+	(*RestartDeploymentArgs)(nil),          // 25: ai.sre.toolgateway.v1.RestartDeploymentArgs
+	(*ScaleDeploymentArgs)(nil),            // 26: ai.sre.toolgateway.v1.ScaleDeploymentArgs
+	(*RollbackDeploymentArgs)(nil),         // 27: ai.sre.toolgateway.v1.RollbackDeploymentArgs
+	(*ExecuteApprovedMutationRequest)(nil), // 28: ai.sre.toolgateway.v1.ExecuteApprovedMutationRequest
+	(*GetMutationExecutionRequest)(nil),    // 29: ai.sre.toolgateway.v1.GetMutationExecutionRequest
+	(*MutationExecution)(nil),              // 30: ai.sre.toolgateway.v1.MutationExecution
+	(*ToolError)(nil),                      // 31: ai.sre.toolgateway.v1.ToolError
+	(*timestamppb.Timestamp)(nil),          // 32: google.protobuf.Timestamp
 }
 var file_ai_sre_toolgateway_v1_tool_gateway_proto_depIdxs = []int32{
-	1,  // 0: ai.sre.toolgateway.v1.RequestContext.caller:type_name -> ai.sre.toolgateway.v1.CallerIdentity
-	2,  // 1: ai.sre.toolgateway.v1.ListToolsRequest.context:type_name -> ai.sre.toolgateway.v1.RequestContext
-	4,  // 2: ai.sre.toolgateway.v1.ListToolsResponse.tools:type_name -> ai.sre.toolgateway.v1.ToolDescriptor
-	25, // 3: ai.sre.toolgateway.v1.QueryPrometheusArgs.at:type_name -> google.protobuf.Timestamp
-	2,  // 4: ai.sre.toolgateway.v1.QueryPrometheusRequest.context:type_name -> ai.sre.toolgateway.v1.RequestContext
-	6,  // 5: ai.sre.toolgateway.v1.QueryPrometheusRequest.args:type_name -> ai.sre.toolgateway.v1.QueryPrometheusArgs
-	25, // 6: ai.sre.toolgateway.v1.QueryLokiArgs.start:type_name -> google.protobuf.Timestamp
-	25, // 7: ai.sre.toolgateway.v1.QueryLokiArgs.end:type_name -> google.protobuf.Timestamp
-	2,  // 8: ai.sre.toolgateway.v1.QueryLokiRequest.context:type_name -> ai.sre.toolgateway.v1.RequestContext
-	8,  // 9: ai.sre.toolgateway.v1.QueryLokiRequest.args:type_name -> ai.sre.toolgateway.v1.QueryLokiArgs
-	2,  // 10: ai.sre.toolgateway.v1.GetTempoTraceRequest.context:type_name -> ai.sre.toolgateway.v1.RequestContext
-	10, // 11: ai.sre.toolgateway.v1.GetTempoTraceRequest.args:type_name -> ai.sre.toolgateway.v1.GetTempoTraceArgs
-	25, // 12: ai.sre.toolgateway.v1.SearchTempoTracesArgs.start:type_name -> google.protobuf.Timestamp
-	25, // 13: ai.sre.toolgateway.v1.SearchTempoTracesArgs.end:type_name -> google.protobuf.Timestamp
-	2,  // 14: ai.sre.toolgateway.v1.SearchTempoTracesRequest.context:type_name -> ai.sre.toolgateway.v1.RequestContext
-	12, // 15: ai.sre.toolgateway.v1.SearchTempoTracesRequest.args:type_name -> ai.sre.toolgateway.v1.SearchTempoTracesArgs
-	25, // 16: ai.sre.toolgateway.v1.ListReleasesArgs.start:type_name -> google.protobuf.Timestamp
-	25, // 17: ai.sre.toolgateway.v1.ListReleasesArgs.end:type_name -> google.protobuf.Timestamp
-	2,  // 18: ai.sre.toolgateway.v1.ListReleasesRequest.context:type_name -> ai.sre.toolgateway.v1.RequestContext
-	14, // 19: ai.sre.toolgateway.v1.ListReleasesRequest.args:type_name -> ai.sre.toolgateway.v1.ListReleasesArgs
-	2,  // 20: ai.sre.toolgateway.v1.GetGitCommitRequest.context:type_name -> ai.sre.toolgateway.v1.RequestContext
-	16, // 21: ai.sre.toolgateway.v1.GetGitCommitRequest.args:type_name -> ai.sre.toolgateway.v1.GetGitCommitArgs
-	2,  // 22: ai.sre.toolgateway.v1.GetKubernetesWorkloadRequest.context:type_name -> ai.sre.toolgateway.v1.RequestContext
-	18, // 23: ai.sre.toolgateway.v1.GetKubernetesWorkloadRequest.args:type_name -> ai.sre.toolgateway.v1.GetKubernetesWorkloadArgs
-	2,  // 24: ai.sre.toolgateway.v1.ListKubernetesEventsRequest.context:type_name -> ai.sre.toolgateway.v1.RequestContext
-	20, // 25: ai.sre.toolgateway.v1.ListKubernetesEventsRequest.args:type_name -> ai.sre.toolgateway.v1.ListKubernetesEventsArgs
-	22, // 26: ai.sre.toolgateway.v1.ReadToolResponse.artifact:type_name -> ai.sre.toolgateway.v1.ArtifactReference
-	0,  // 27: ai.sre.toolgateway.v1.ToolError.code:type_name -> ai.sre.toolgateway.v1.ToolErrorCode
-	3,  // 28: ai.sre.toolgateway.v1.ToolGatewayV1.ListTools:input_type -> ai.sre.toolgateway.v1.ListToolsRequest
-	7,  // 29: ai.sre.toolgateway.v1.ToolGatewayV1.QueryPrometheus:input_type -> ai.sre.toolgateway.v1.QueryPrometheusRequest
-	9,  // 30: ai.sre.toolgateway.v1.ToolGatewayV1.QueryLoki:input_type -> ai.sre.toolgateway.v1.QueryLokiRequest
-	11, // 31: ai.sre.toolgateway.v1.ToolGatewayV1.GetTempoTrace:input_type -> ai.sre.toolgateway.v1.GetTempoTraceRequest
-	13, // 32: ai.sre.toolgateway.v1.ToolGatewayV1.SearchTempoTraces:input_type -> ai.sre.toolgateway.v1.SearchTempoTracesRequest
-	15, // 33: ai.sre.toolgateway.v1.ToolGatewayV1.ListReleases:input_type -> ai.sre.toolgateway.v1.ListReleasesRequest
-	17, // 34: ai.sre.toolgateway.v1.ToolGatewayV1.GetGitCommit:input_type -> ai.sre.toolgateway.v1.GetGitCommitRequest
-	19, // 35: ai.sre.toolgateway.v1.ToolGatewayV1.GetKubernetesWorkload:input_type -> ai.sre.toolgateway.v1.GetKubernetesWorkloadRequest
-	21, // 36: ai.sre.toolgateway.v1.ToolGatewayV1.ListKubernetesEvents:input_type -> ai.sre.toolgateway.v1.ListKubernetesEventsRequest
-	5,  // 37: ai.sre.toolgateway.v1.ToolGatewayV1.ListTools:output_type -> ai.sre.toolgateway.v1.ListToolsResponse
-	23, // 38: ai.sre.toolgateway.v1.ToolGatewayV1.QueryPrometheus:output_type -> ai.sre.toolgateway.v1.ReadToolResponse
-	23, // 39: ai.sre.toolgateway.v1.ToolGatewayV1.QueryLoki:output_type -> ai.sre.toolgateway.v1.ReadToolResponse
-	23, // 40: ai.sre.toolgateway.v1.ToolGatewayV1.GetTempoTrace:output_type -> ai.sre.toolgateway.v1.ReadToolResponse
-	23, // 41: ai.sre.toolgateway.v1.ToolGatewayV1.SearchTempoTraces:output_type -> ai.sre.toolgateway.v1.ReadToolResponse
-	23, // 42: ai.sre.toolgateway.v1.ToolGatewayV1.ListReleases:output_type -> ai.sre.toolgateway.v1.ReadToolResponse
-	23, // 43: ai.sre.toolgateway.v1.ToolGatewayV1.GetGitCommit:output_type -> ai.sre.toolgateway.v1.ReadToolResponse
-	23, // 44: ai.sre.toolgateway.v1.ToolGatewayV1.GetKubernetesWorkload:output_type -> ai.sre.toolgateway.v1.ReadToolResponse
-	23, // 45: ai.sre.toolgateway.v1.ToolGatewayV1.ListKubernetesEvents:output_type -> ai.sre.toolgateway.v1.ReadToolResponse
-	37, // [37:46] is the sub-list for method output_type
-	28, // [28:37] is the sub-list for method input_type
-	28, // [28:28] is the sub-list for extension type_name
-	28, // [28:28] is the sub-list for extension extendee
-	0,  // [0:28] is the sub-list for field type_name
+	2,  // 0: ai.sre.toolgateway.v1.RequestContext.caller:type_name -> ai.sre.toolgateway.v1.CallerIdentity
+	3,  // 1: ai.sre.toolgateway.v1.ListToolsRequest.context:type_name -> ai.sre.toolgateway.v1.RequestContext
+	5,  // 2: ai.sre.toolgateway.v1.ListToolsResponse.tools:type_name -> ai.sre.toolgateway.v1.ToolDescriptor
+	32, // 3: ai.sre.toolgateway.v1.QueryPrometheusArgs.at:type_name -> google.protobuf.Timestamp
+	3,  // 4: ai.sre.toolgateway.v1.QueryPrometheusRequest.context:type_name -> ai.sre.toolgateway.v1.RequestContext
+	7,  // 5: ai.sre.toolgateway.v1.QueryPrometheusRequest.args:type_name -> ai.sre.toolgateway.v1.QueryPrometheusArgs
+	32, // 6: ai.sre.toolgateway.v1.QueryLokiArgs.start:type_name -> google.protobuf.Timestamp
+	32, // 7: ai.sre.toolgateway.v1.QueryLokiArgs.end:type_name -> google.protobuf.Timestamp
+	3,  // 8: ai.sre.toolgateway.v1.QueryLokiRequest.context:type_name -> ai.sre.toolgateway.v1.RequestContext
+	9,  // 9: ai.sre.toolgateway.v1.QueryLokiRequest.args:type_name -> ai.sre.toolgateway.v1.QueryLokiArgs
+	3,  // 10: ai.sre.toolgateway.v1.GetTempoTraceRequest.context:type_name -> ai.sre.toolgateway.v1.RequestContext
+	11, // 11: ai.sre.toolgateway.v1.GetTempoTraceRequest.args:type_name -> ai.sre.toolgateway.v1.GetTempoTraceArgs
+	32, // 12: ai.sre.toolgateway.v1.SearchTempoTracesArgs.start:type_name -> google.protobuf.Timestamp
+	32, // 13: ai.sre.toolgateway.v1.SearchTempoTracesArgs.end:type_name -> google.protobuf.Timestamp
+	3,  // 14: ai.sre.toolgateway.v1.SearchTempoTracesRequest.context:type_name -> ai.sre.toolgateway.v1.RequestContext
+	13, // 15: ai.sre.toolgateway.v1.SearchTempoTracesRequest.args:type_name -> ai.sre.toolgateway.v1.SearchTempoTracesArgs
+	32, // 16: ai.sre.toolgateway.v1.ListReleasesArgs.start:type_name -> google.protobuf.Timestamp
+	32, // 17: ai.sre.toolgateway.v1.ListReleasesArgs.end:type_name -> google.protobuf.Timestamp
+	3,  // 18: ai.sre.toolgateway.v1.ListReleasesRequest.context:type_name -> ai.sre.toolgateway.v1.RequestContext
+	15, // 19: ai.sre.toolgateway.v1.ListReleasesRequest.args:type_name -> ai.sre.toolgateway.v1.ListReleasesArgs
+	3,  // 20: ai.sre.toolgateway.v1.GetGitCommitRequest.context:type_name -> ai.sre.toolgateway.v1.RequestContext
+	17, // 21: ai.sre.toolgateway.v1.GetGitCommitRequest.args:type_name -> ai.sre.toolgateway.v1.GetGitCommitArgs
+	3,  // 22: ai.sre.toolgateway.v1.GetKubernetesWorkloadRequest.context:type_name -> ai.sre.toolgateway.v1.RequestContext
+	19, // 23: ai.sre.toolgateway.v1.GetKubernetesWorkloadRequest.args:type_name -> ai.sre.toolgateway.v1.GetKubernetesWorkloadArgs
+	3,  // 24: ai.sre.toolgateway.v1.ListKubernetesEventsRequest.context:type_name -> ai.sre.toolgateway.v1.RequestContext
+	21, // 25: ai.sre.toolgateway.v1.ListKubernetesEventsRequest.args:type_name -> ai.sre.toolgateway.v1.ListKubernetesEventsArgs
+	23, // 26: ai.sre.toolgateway.v1.ReadToolResponse.artifact:type_name -> ai.sre.toolgateway.v1.ArtifactReference
+	3,  // 27: ai.sre.toolgateway.v1.ExecuteApprovedMutationRequest.context:type_name -> ai.sre.toolgateway.v1.RequestContext
+	25, // 28: ai.sre.toolgateway.v1.ExecuteApprovedMutationRequest.restart_deployment:type_name -> ai.sre.toolgateway.v1.RestartDeploymentArgs
+	26, // 29: ai.sre.toolgateway.v1.ExecuteApprovedMutationRequest.scale_deployment:type_name -> ai.sre.toolgateway.v1.ScaleDeploymentArgs
+	27, // 30: ai.sre.toolgateway.v1.ExecuteApprovedMutationRequest.rollback_deployment:type_name -> ai.sre.toolgateway.v1.RollbackDeploymentArgs
+	3,  // 31: ai.sre.toolgateway.v1.GetMutationExecutionRequest.context:type_name -> ai.sre.toolgateway.v1.RequestContext
+	0,  // 32: ai.sre.toolgateway.v1.MutationExecution.status:type_name -> ai.sre.toolgateway.v1.MutationExecutionStatus
+	32, // 33: ai.sre.toolgateway.v1.MutationExecution.started_at:type_name -> google.protobuf.Timestamp
+	32, // 34: ai.sre.toolgateway.v1.MutationExecution.finished_at:type_name -> google.protobuf.Timestamp
+	1,  // 35: ai.sre.toolgateway.v1.ToolError.code:type_name -> ai.sre.toolgateway.v1.ToolErrorCode
+	4,  // 36: ai.sre.toolgateway.v1.ToolGatewayV1.ListTools:input_type -> ai.sre.toolgateway.v1.ListToolsRequest
+	8,  // 37: ai.sre.toolgateway.v1.ToolGatewayV1.QueryPrometheus:input_type -> ai.sre.toolgateway.v1.QueryPrometheusRequest
+	10, // 38: ai.sre.toolgateway.v1.ToolGatewayV1.QueryLoki:input_type -> ai.sre.toolgateway.v1.QueryLokiRequest
+	12, // 39: ai.sre.toolgateway.v1.ToolGatewayV1.GetTempoTrace:input_type -> ai.sre.toolgateway.v1.GetTempoTraceRequest
+	14, // 40: ai.sre.toolgateway.v1.ToolGatewayV1.SearchTempoTraces:input_type -> ai.sre.toolgateway.v1.SearchTempoTracesRequest
+	16, // 41: ai.sre.toolgateway.v1.ToolGatewayV1.ListReleases:input_type -> ai.sre.toolgateway.v1.ListReleasesRequest
+	18, // 42: ai.sre.toolgateway.v1.ToolGatewayV1.GetGitCommit:input_type -> ai.sre.toolgateway.v1.GetGitCommitRequest
+	20, // 43: ai.sre.toolgateway.v1.ToolGatewayV1.GetKubernetesWorkload:input_type -> ai.sre.toolgateway.v1.GetKubernetesWorkloadRequest
+	22, // 44: ai.sre.toolgateway.v1.ToolGatewayV1.ListKubernetesEvents:input_type -> ai.sre.toolgateway.v1.ListKubernetesEventsRequest
+	28, // 45: ai.sre.toolgateway.v1.ToolGatewayV1.ExecuteApprovedMutation:input_type -> ai.sre.toolgateway.v1.ExecuteApprovedMutationRequest
+	29, // 46: ai.sre.toolgateway.v1.ToolGatewayV1.GetMutationExecution:input_type -> ai.sre.toolgateway.v1.GetMutationExecutionRequest
+	6,  // 47: ai.sre.toolgateway.v1.ToolGatewayV1.ListTools:output_type -> ai.sre.toolgateway.v1.ListToolsResponse
+	24, // 48: ai.sre.toolgateway.v1.ToolGatewayV1.QueryPrometheus:output_type -> ai.sre.toolgateway.v1.ReadToolResponse
+	24, // 49: ai.sre.toolgateway.v1.ToolGatewayV1.QueryLoki:output_type -> ai.sre.toolgateway.v1.ReadToolResponse
+	24, // 50: ai.sre.toolgateway.v1.ToolGatewayV1.GetTempoTrace:output_type -> ai.sre.toolgateway.v1.ReadToolResponse
+	24, // 51: ai.sre.toolgateway.v1.ToolGatewayV1.SearchTempoTraces:output_type -> ai.sre.toolgateway.v1.ReadToolResponse
+	24, // 52: ai.sre.toolgateway.v1.ToolGatewayV1.ListReleases:output_type -> ai.sre.toolgateway.v1.ReadToolResponse
+	24, // 53: ai.sre.toolgateway.v1.ToolGatewayV1.GetGitCommit:output_type -> ai.sre.toolgateway.v1.ReadToolResponse
+	24, // 54: ai.sre.toolgateway.v1.ToolGatewayV1.GetKubernetesWorkload:output_type -> ai.sre.toolgateway.v1.ReadToolResponse
+	24, // 55: ai.sre.toolgateway.v1.ToolGatewayV1.ListKubernetesEvents:output_type -> ai.sre.toolgateway.v1.ReadToolResponse
+	30, // 56: ai.sre.toolgateway.v1.ToolGatewayV1.ExecuteApprovedMutation:output_type -> ai.sre.toolgateway.v1.MutationExecution
+	30, // 57: ai.sre.toolgateway.v1.ToolGatewayV1.GetMutationExecution:output_type -> ai.sre.toolgateway.v1.MutationExecution
+	47, // [47:58] is the sub-list for method output_type
+	36, // [36:47] is the sub-list for method input_type
+	36, // [36:36] is the sub-list for extension type_name
+	36, // [36:36] is the sub-list for extension extendee
+	0,  // [0:36] is the sub-list for field type_name
 }
 
 func init() { file_ai_sre_toolgateway_v1_tool_gateway_proto_init() }
@@ -1670,13 +2282,18 @@ func file_ai_sre_toolgateway_v1_tool_gateway_proto_init() {
 	if File_ai_sre_toolgateway_v1_tool_gateway_proto != nil {
 		return
 	}
+	file_ai_sre_toolgateway_v1_tool_gateway_proto_msgTypes[26].OneofWrappers = []any{
+		(*ExecuteApprovedMutationRequest_RestartDeployment)(nil),
+		(*ExecuteApprovedMutationRequest_ScaleDeployment)(nil),
+		(*ExecuteApprovedMutationRequest_RollbackDeployment)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ai_sre_toolgateway_v1_tool_gateway_proto_rawDesc), len(file_ai_sre_toolgateway_v1_tool_gateway_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   24,
+			NumEnums:      2,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

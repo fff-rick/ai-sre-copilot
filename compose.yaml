@@ -53,6 +53,8 @@ services:
       SERVER_ADDRESS: ":8081"
       GRPC_ADDRESS: ":9091"
       GATEWAY_AUTH_TOKEN: ${GATEWAY_AUTH_TOKEN:-local-development-token}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ai_sre}:${POSTGRES_PASSWORD:-local-development-only}@postgres:5432/${POSTGRES_DB:-ai_sre}
+      MUTATION_ALLOWED_NAMESPACE: ${MUTATION_ALLOWED_NAMESPACE:-ai-sre-test}
       PROMETHEUS_URL: http://host.docker.internal:19090
       LOKI_URL: http://host.docker.internal:13100
       TEMPO_URL: http://host.docker.internal:13200
@@ -67,6 +69,9 @@ services:
     volumes:
       - ./:/workspace:ro
       - tool-artifacts:/var/lib/ai-sre/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8081/health/ready"]
       interval: 3s

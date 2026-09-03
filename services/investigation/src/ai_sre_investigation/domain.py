@@ -21,6 +21,9 @@ class InvestigationStatus(StrEnum):
     VERIFYING = "VERIFYING"
     RECOMMENDING = "RECOMMENDING"
     REPORTING = "REPORTING"
+    WAITING_APPROVAL = "WAITING_APPROVAL"
+    EXECUTING = "EXECUTING"
+    VALIDATING = "VALIDATING"
     COMPLETED = "COMPLETED"
     CANCELLED = "CANCELLED"
     FAILED = "FAILED"
@@ -177,9 +180,20 @@ class RiskLevel(StrEnum):
 class ProposedAction(FrozenModel):
     action_id: str = Field(pattern=r"^act-[a-zA-Z0-9_-]{1,60}$")
     description: str = Field(min_length=1, max_length=1_000)
-    target: str = Field(min_length=1, max_length=253)
+    tool_name: str | None = Field(
+        default=None, pattern=r"^kubernetes\.(restart|scale|rollback)_deployment$"
+    )
+    target: str = Field(min_length=1, max_length=520)
+    arguments: dict[str, Any] = Field(default_factory=dict)
     risk_level: RiskLevel
     expected_effect: str = Field(min_length=1, max_length=1_000)
+    rollback_plan: str = Field(
+        default="Stop and restore the previously observed workload configuration.",
+        min_length=1,
+        max_length=1_000,
+    )
+    approval_status: str = "PENDING"
+    idempotency_key: str | None = None
     evidence_ids: list[str] = Field(default_factory=list, max_length=20)
     requires_approval: bool = True
 

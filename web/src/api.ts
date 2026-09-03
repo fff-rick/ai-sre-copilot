@@ -6,6 +6,9 @@ export type Status =
   | "VERIFYING"
   | "RECOMMENDING"
   | "REPORTING"
+  | "WAITING_APPROVAL"
+  | "EXECUTING"
+  | "VALIDATING"
   | "COMPLETED"
   | "CANCELLED"
   | "FAILED";
@@ -40,6 +43,50 @@ export interface InvestigationReport {
   evidence_gaps: Array<{ source_type: string; message: string }>;
   uncertainty: string[];
   completed_at: string;
+}
+
+export interface RemediationAction {
+  action_id: string;
+  tool_name:
+    | "kubernetes.restart_deployment"
+    | "kubernetes.scale_deployment"
+    | "kubernetes.rollback_deployment";
+  namespace: string;
+  name: string;
+  replicas?: number;
+  revision?: number;
+  description: string;
+  expected_effect: string;
+  rollback_plan: string;
+  evidence_ids: string[];
+  verification_promql: string;
+  recovery_goal: "decrease" | "increase";
+}
+
+export interface RemediationApproval {
+  approval_id: string;
+  investigation_id: string;
+  action: RemediationAction;
+  target: string;
+  parameters_hash: string;
+  risk_level: "low" | "medium" | "high";
+  status: "PENDING" | "APPROVED" | "REJECTED" | "EXPIRED" | "CONSUMED";
+  proposed_by: string;
+  approved_by: string | null;
+  token_expires_at: string | null;
+}
+
+export interface ApprovalGrant {
+  approval: RemediationApproval;
+  approval_token: string;
+}
+
+export interface RemediationExecution {
+  execution_id: string;
+  status: string;
+  recovery_status: "RECOVERED" | "NOT_RECOVERED" | "UNABLE_TO_DETERMINE";
+  pre_evidence: Record<string, unknown>;
+  post_evidence: Record<string, unknown>;
 }
 
 export interface StoredInvestigation {
@@ -105,9 +152,92 @@ export async function getEvidence(
   return response.evidence;
 }
 
-async function request<T>(path: string): Promise<T> {
+const investigator = {
+  "X-Actor-ID": "console-investigator",
+  "X-Actor-Role": "investigator",
+};
+const approver = {
+  "X-Actor-ID": "console-approver",
+  "X-Actor-Role": "approver",
+};
+
+export function listApprovals(id: string): Promise<RemediationApproval[]> {
+  return request(`/api/v1/investigations/${encodeURIComponent(id)}/approvals`);
+}
+
+export function proposeApproval(
+  id: string,
+  action: RemediationAction,
+): Promise<RemediationApproval> {
+  return request(`/api/v1/investigations/${encodeURIComponent(id)}/approvals`, {
+    method: "POST",
+    headers: investigator,
+    body: JSON.stringify({ action }),
+  });
+}
+
+export function modifyApproval(
+  investigationId: string,
+  approvalId: string,
+  action: RemediationAction,
+): Promise<RemediationApproval> {
+  return request(
+    `/api/v1/investigations/${encodeURIComponent(investigationId)}/approvals/${encodeURIComponent(approvalId)}`,
+    { method: "PUT", headers: approver, body: JSON.stringify(action) },
+  );
+}
+
+export function approveApproval(
+  investigationId: string,
+  approvalId: string,
+): Promise<ApprovalGrant> {
+  return request(
+    `/api/v1/investigations/${encodeURIComponent(investigationId)}/approvals/${encodeURIComponent(approvalId)}/approve`,
+    {
+      method: "POST",
+      headers: approver,
+      body: JSON.stringify({ expires_in_seconds: 900 }),
+    },
+  );
+}
+
+export function rejectApproval(
+  investigationId: string,
+  approvalId: string,
+): Promise<RemediationApproval> {
+  return request(
+    `/api/v1/investigations/${encodeURIComponent(investigationId)}/approvals/${encodeURIComponent(approvalId)}/reject`,
+    { method: "POST", headers: approver },
+  );
+}
+
+export function executeApproval(
+  investigationId: string,
+  approvalId: string,
+  approvalToken: string,
+  idempotencyKey: string,
+): Promise<RemediationExecution> {
+  return request(
+    `/api/v1/investigations/${encodeURIComponent(investigationId)}/approvals/${encodeURIComponent(approvalId)}/execute`,
+    {
+      method: "POST",
+      headers: approver,
+      body: JSON.stringify({
+        approval_token: approvalToken,
+        idempotency_key: idempotencyKey,
+      }),
+    },
+  );
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(path, {
-    headers: { Accept: "application/json" },
+    ...init,
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...init.headers,
+    },
   });
   if (!response.ok) {
     throw new Error(`Request failed (${response.status})`);

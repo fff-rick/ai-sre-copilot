@@ -2,12 +2,14 @@ package gateway
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"log/slog"
 	"net/http"
 	"os"
 	"time"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -16,18 +18,20 @@ import (
 // Config contains only startup-controlled source locations and trust settings.
 // No source URL can be supplied by an RPC caller.
 type Config struct {
-	PrometheusURL  string
-	LokiURL        string
-	TempoURL       string
-	ReleaseFile    string
-	GitRepository  string
-	Kubeconfig     string
-	ArtifactDir    string
-	AuthToken      string
-	InlineBytes    int
-	MaximumBytes   int
-	RequestsPerSec float64
-	Burst          int
+	PrometheusURL    string
+	LokiURL          string
+	TempoURL         string
+	ReleaseFile      string
+	GitRepository    string
+	Kubeconfig       string
+	ArtifactDir      string
+	AuthToken        string
+	InlineBytes      int
+	MaximumBytes     int
+	RequestsPerSec   float64
+	Burst            int
+	DatabaseURL      string
+	AllowedNamespace string
 }
 
 // NewProductionServer wires fixed connectors. Optional Git and Kubernetes
@@ -54,16 +58,32 @@ func NewProductionServer(config Config, logger *slog.Logger) (*Server, []error, 
 	} else {
 		warnings = append(warnings, clientErr)
 	}
+	var authorizer mutationAuthorizer = unavailableMutationAuthorizer{}
+	if config.DatabaseURL != "" {
+		database, databaseErr := sql.Open("pgx", config.DatabaseURL)
+		if databaseErr != nil {
+			return nil, warnings, databaseErr
+		}
+		if setupErr := setupMutationSchema(context.Background(), database); setupErr != nil {
+			_ = database.Close()
+			return nil, warnings, setupErr
+		}
+		authorizer = newPostgresMutationAuthorizer(database)
+	} else {
+		warnings = append(warnings, errors.New("mutation approval database is not configured"))
+	}
 	server, err := newServer(serverOptions{
-		Observability: httpConnector,
-		Releases:      jsonlReleaseConnector{filePath: config.ReleaseFile, maxLine: 1024 * 1024},
-		Git:           gitSource,
-		Kubernetes:    kubernetesSource,
-		Limiter:       newActorLimiter(config.RequestsPerSec, config.Burst),
-		Audit:         logAuditSink{logger: logger},
-		Artifacts:     artifacts,
-		InlineBytes:   config.InlineBytes,
-		AuthToken:     config.AuthToken,
+		Observability:      httpConnector,
+		Releases:           jsonlReleaseConnector{filePath: config.ReleaseFile, maxLine: 1024 * 1024},
+		Git:                gitSource,
+		Kubernetes:         kubernetesSource,
+		Limiter:            newActorLimiter(config.RequestsPerSec, config.Burst),
+		Audit:              logAuditSink{logger: logger},
+		Artifacts:          artifacts,
+		InlineBytes:        config.InlineBytes,
+		AuthToken:          config.AuthToken,
+		MutationAuthorizer: authorizer,
+		AllowedNamespace:   config.AllowedNamespace,
 	})
 	return server, warnings, err
 }
@@ -101,21 +121,35 @@ func (unavailableKubernetesConnector) ListEvents(context.Context, string, string
 	return connectorResult{}, sourceUnavailable(errors.New("Kubernetes source is not configured"))
 }
 
+func (unavailableKubernetesConnector) RestartDeployment(context.Context, string, string, time.Time) (connectorResult, error) {
+	return connectorResult{}, sourceUnavailable(errors.New("Kubernetes mutation source is not configured"))
+}
+
+func (unavailableKubernetesConnector) ScaleDeployment(context.Context, string, string, int32) (connectorResult, error) {
+	return connectorResult{}, sourceUnavailable(errors.New("Kubernetes mutation source is not configured"))
+}
+
+func (unavailableKubernetesConnector) RollbackDeployment(context.Context, string, string, int64) (connectorResult, error) {
+	return connectorResult{}, sourceUnavailable(errors.New("Kubernetes mutation source is not configured"))
+}
+
 // ConfigFromEnvironment resolves startup-only connector configuration.
 func ConfigFromEnvironment() Config {
 	return Config{
-		PrometheusURL:  envOr("PROMETHEUS_URL", "http://127.0.0.1:19090"),
-		LokiURL:        envOr("LOKI_URL", "http://127.0.0.1:13100"),
-		TempoURL:       envOr("TEMPO_URL", "http://127.0.0.1:13200"),
-		ReleaseFile:    envOr("RELEASE_EVENTS_FILE", "../../testbed/artifacts/fault-events/events.jsonl"),
-		GitRepository:  envOr("GIT_REPOSITORY_PATH", "../.."),
-		Kubeconfig:     os.Getenv("KUBECONFIG"),
-		ArtifactDir:    envOr("ARTIFACT_DIRECTORY", "/tmp/ai-sre-tool-artifacts"),
-		AuthToken:      os.Getenv("GATEWAY_AUTH_TOKEN"),
-		InlineBytes:    64 * 1024,
-		MaximumBytes:   4 * 1024 * 1024,
-		RequestsPerSec: 20,
-		Burst:          40,
+		PrometheusURL:    envOr("PROMETHEUS_URL", "http://127.0.0.1:19090"),
+		LokiURL:          envOr("LOKI_URL", "http://127.0.0.1:13100"),
+		TempoURL:         envOr("TEMPO_URL", "http://127.0.0.1:13200"),
+		ReleaseFile:      envOr("RELEASE_EVENTS_FILE", "../../testbed/artifacts/fault-events/events.jsonl"),
+		GitRepository:    envOr("GIT_REPOSITORY_PATH", "../.."),
+		Kubeconfig:       os.Getenv("KUBECONFIG"),
+		ArtifactDir:      envOr("ARTIFACT_DIRECTORY", "/tmp/ai-sre-tool-artifacts"),
+		AuthToken:        os.Getenv("GATEWAY_AUTH_TOKEN"),
+		InlineBytes:      64 * 1024,
+		MaximumBytes:     4 * 1024 * 1024,
+		RequestsPerSec:   20,
+		Burst:            40,
+		DatabaseURL:      os.Getenv("DATABASE_URL"),
+		AllowedNamespace: envOr("MUTATION_ALLOWED_NAMESPACE", "ai-sre-test"),
 	}
 }
 
