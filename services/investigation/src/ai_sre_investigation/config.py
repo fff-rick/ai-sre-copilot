@@ -9,7 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Process configuration without embedded credentials."""
 
-    model_config = SettingsConfigDict(env_prefix="AI_SRE_", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="AI_SRE_", extra="ignore", env_ignore_empty=True)
 
     service_name: str = "investigation-service"
     environment: str = "development"
@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     model_api_key: str | None = Field(default=None, repr=False)
     model_id: str | None = None
     model_timeout_seconds: float = Field(default=60, gt=0, le=300)
+    embedding_base_url: str | None = None
+    embedding_api_key: str | None = Field(default=None, repr=False)
+    embedding_model_id: str | None = None
+    embedding_dimensions: int | None = Field(default=None, ge=8, le=4_096)
+    embedding_timeout_seconds: float = Field(default=30, gt=0, le=300)
 
 
 @lru_cache

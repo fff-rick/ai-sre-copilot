@@ -1,6 +1,6 @@
 # Investigation Service
 
-Python/FastAPI 服务拥有调查领域状态和模型编排。阶段 3 使用单一显式 LangGraph 工作流执行范围判定、并行证据收集、结构化假设、引用校验、建议和报告；模型不能选择任意工具或控制状态边。
+Python/FastAPI 服务拥有调查领域状态和模型编排。阶段 4 在单一显式 LangGraph 工作流中加入固定知识检索节点，通过 PostgreSQL 全文检索、pgvector 精确余弦检索和 RRF 合并 Runbook、服务说明与历史事故；模型不能选择任意工具或控制状态边。
 
 ```bash
 uv sync --all-groups
@@ -12,6 +12,20 @@ uv run pytest
 
 - `POST /api/v1/investigations`
 - `GET /api/v1/investigations/{id}`
+- `GET /api/v1/investigations`
+- `GET /api/v1/investigations/{id}/timeline`
+- `GET /api/v1/investigations/{id}/events`（SSE，支持 `Last-Event-ID`）
+- `GET /api/v1/investigations/{id}/evidence/{evidence_id}`
 - `POST /api/v1/investigations/{id}/cancel`
 
-真实模型凭据只通过 `AI_SRE_MODEL_BASE_URL`、`AI_SRE_MODEL_API_KEY` 和 `AI_SRE_MODEL_ID` 注入。缺少任一必需配置时创建调查返回 503。
+真实模型凭据只通过 `AI_SRE_MODEL_BASE_URL`、`AI_SRE_MODEL_API_KEY` 和 `AI_SRE_MODEL_ID` 注入。嵌入服务通过 `AI_SRE_EMBEDDING_*` 配置；base URL 和 API Key 未单独设置时继承模型配置。缺少调查运行时任一必需配置时创建调查返回 503。
+
+知识目录使用受版本控制的 JSON catalog 和 Markdown 文档：
+
+```bash
+AI_SRE_DATABASE_URL=... \
+AI_SRE_EMBEDDING_BASE_URL=... \
+AI_SRE_EMBEDDING_API_KEY=... \
+AI_SRE_EMBEDDING_MODEL_ID=... \
+uv run ai-sre-ingest ../../knowledge/catalog.json
+```

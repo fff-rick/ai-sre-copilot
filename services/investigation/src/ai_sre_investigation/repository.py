@@ -3,11 +3,12 @@
 import asyncio
 import json
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from typing import Any, Protocol, cast
 
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
-from pydantic import ConfigDict, Field
+from pydantic import AwareDatetime, ConfigDict, Field
 
 from ai_sre_investigation.domain import FrozenModel, Investigation, InvestigationStatus
 from ai_sre_investigation.workflow import InvestigationState
@@ -24,10 +25,35 @@ class StoredInvestigation(FrozenModel):
     attempts: int = Field(default=0, ge=0)
 
 
+class InvestigationEvent(FrozenModel):
+    event_id: int = Field(ge=1)
+    investigation_id: str
+    event_type: str = Field(pattern=r"^[a-z][a-z0-9_.-]{1,99}$")
+    status: InvestigationStatus
+    payload: dict[str, Any] = Field(default_factory=dict)
+    created_at: AwareDatetime
+
+
 class InvestigationRepository(Protocol):
     async def create(self, investigation: Investigation) -> None: ...
 
     async def get(self, investigation_id: str) -> StoredInvestigation | None: ...
+
+    async def list_investigations(
+        self, limit: int = 50, offset: int = 0
+    ) -> list[StoredInvestigation]: ...
+
+    async def append_event(
+        self,
+        investigation_id: str,
+        event_type: str,
+        status: InvestigationStatus,
+        payload: Mapping[str, Any],
+    ) -> InvestigationEvent: ...
+
+    async def list_events(
+        self, investigation_id: str, after_event_id: int = 0, limit: int = 100
+    ) -> list[InvestigationEvent]: ...
 
     async def claim_next(self, worker_id: str) -> Investigation | None: ...
 
@@ -50,6 +76,8 @@ class InMemoryInvestigationRepository:
     def __init__(self) -> None:
         self._records: dict[str, StoredInvestigation] = {}
         self._claimed: set[str] = set()
+        self._events: list[InvestigationEvent] = []
+        self._next_event_id = 1
         self._lock = asyncio.Lock()
 
     async def create(self, investigation: Investigation) -> None:
@@ -63,6 +91,50 @@ class InMemoryInvestigationRepository:
     async def get(self, investigation_id: str) -> StoredInvestigation | None:
         async with self._lock:
             return self._records.get(investigation_id)
+
+    async def list_investigations(
+        self, limit: int = 50, offset: int = 0
+    ) -> list[StoredInvestigation]:
+        async with self._lock:
+            ordered = sorted(
+                self._records.values(),
+                key=lambda item: item.investigation.created_at,
+                reverse=True,
+            )
+            return ordered[offset : offset + limit]
+
+    async def append_event(
+        self,
+        investigation_id: str,
+        event_type: str,
+        status: InvestigationStatus,
+        payload: Mapping[str, Any],
+    ) -> InvestigationEvent:
+        async with self._lock:
+            record = self._records[investigation_id]
+            event = InvestigationEvent(
+                event_id=self._next_event_id,
+                investigation_id=investigation_id,
+                event_type=event_type,
+                status=status,
+                payload=dict(payload),
+                created_at=datetime.now(UTC),
+            )
+            self._next_event_id += 1
+            self._events.append(event)
+            if status not in _TERMINAL:
+                self._records[investigation_id] = record.model_copy(update={"status": status})
+            return event
+
+    async def list_events(
+        self, investigation_id: str, after_event_id: int = 0, limit: int = 100
+    ) -> list[InvestigationEvent]:
+        async with self._lock:
+            return [
+                item
+                for item in self._events
+                if item.investigation_id == investigation_id and item.event_id > after_event_id
+            ][:limit]
 
     async def claim_next(self, worker_id: str) -> Investigation | None:
         del worker_id
@@ -83,6 +155,18 @@ class InMemoryInvestigationRepository:
             self._records[investigation_id] = record.model_copy(
                 update={"status": status, "report": state.get("report")}
             )
+            if status in _TERMINAL:
+                self._events.append(
+                    InvestigationEvent(
+                        event_id=self._next_event_id,
+                        investigation_id=investigation_id,
+                        event_type="investigation.finished",
+                        status=status,
+                        payload={"terminal": True},
+                        created_at=datetime.now(UTC),
+                    )
+                )
+                self._next_event_id += 1
             self._claimed.discard(investigation_id)
 
     async def fail_attempt(self, investigation_id: str, safe_error: str) -> None:
@@ -163,6 +247,73 @@ class PostgresInvestigationRepository:  # pragma: no cover - exercised by stage-
             row = await cursor.fetchone()
         return _stored(row) if row else None
 
+    async def list_investigations(
+        self, limit: int = 50, offset: int = 0
+    ) -> list[StoredInvestigation]:
+        async with self._pool.connection() as connection:
+            cursor = await connection.execute(
+                """
+                SELECT investigation, status, report, cancel_requested, last_error, attempts
+                FROM investigations
+                ORDER BY created_at DESC, investigation_id
+                LIMIT %s OFFSET %s
+                """,
+                (limit, offset),
+            )
+            rows = await cursor.fetchall()
+        return [_stored(row) for row in rows]
+
+    async def append_event(
+        self,
+        investigation_id: str,
+        event_type: str,
+        status: InvestigationStatus,
+        payload: Mapping[str, Any],
+    ) -> InvestigationEvent:
+        async with self._pool.connection() as connection, connection.transaction():
+            cursor = await connection.execute(
+                """
+                INSERT INTO investigation_events (
+                    investigation_id, event_type, status, payload
+                ) VALUES (%s, %s, %s, %s::jsonb)
+                RETURNING event_id, investigation_id, event_type, status, payload, created_at
+                """,
+                (investigation_id, event_type, status, json.dumps(dict(payload))),
+            )
+            row = await cursor.fetchone()
+            await connection.execute(
+                """
+                UPDATE investigations
+                SET status = CASE
+                        WHEN %s = ANY(ARRAY['COMPLETED', 'CANCELLED', 'FAILED']) THEN status
+                        ELSE %s
+                    END,
+                    updated_at = now()
+                WHERE investigation_id = %s
+                """,
+                (status, status, investigation_id),
+            )
+        if row is None:
+            raise RuntimeError("created investigation event could not be loaded")
+        return _event(row)
+
+    async def list_events(
+        self, investigation_id: str, after_event_id: int = 0, limit: int = 100
+    ) -> list[InvestigationEvent]:
+        async with self._pool.connection() as connection:
+            cursor = await connection.execute(
+                """
+                SELECT event_id, investigation_id, event_type, status, payload, created_at
+                FROM investigation_events
+                WHERE investigation_id = %s AND event_id > %s
+                ORDER BY event_id
+                LIMIT %s
+                """,
+                (investigation_id, after_event_id, limit),
+            )
+            rows = await cursor.fetchall()
+        return [_event(row) for row in rows]
+
     async def claim_next(self, worker_id: str) -> Investigation | None:
         async with self._pool.connection() as connection:
             cursor = await connection.execute(
@@ -196,7 +347,7 @@ class PostgresInvestigationRepository:  # pragma: no cover - exercised by stage-
 
     async def save_state(self, investigation_id: str, state: InvestigationState) -> None:
         status = InvestigationStatus(state["status"])
-        async with self._pool.connection() as connection:
+        async with self._pool.connection() as connection, connection.transaction():
             await connection.execute(
                 """
                 UPDATE investigations
@@ -215,6 +366,15 @@ class PostgresInvestigationRepository:  # pragma: no cover - exercised by stage-
                     investigation_id,
                 ),
             )
+            if status in _TERMINAL:
+                await connection.execute(
+                    """
+                    INSERT INTO investigation_events (
+                        investigation_id, event_type, status, payload
+                    ) VALUES (%s, 'investigation.finished', %s, '{"terminal":true}'::jsonb)
+                    """,
+                    (investigation_id, status),
+                )
 
     async def fail_attempt(self, investigation_id: str, safe_error: str) -> None:
         async with self._pool.connection() as connection:
@@ -284,6 +444,17 @@ def _stored(row: Mapping[str, Any]) -> StoredInvestigation:
     )
 
 
+def _event(row: Mapping[str, Any]) -> InvestigationEvent:
+    return InvestigationEvent(
+        event_id=int(row["event_id"]),
+        investigation_id=str(row["investigation_id"]),
+        event_type=str(row["event_type"]),
+        status=InvestigationStatus(row["status"]),
+        payload=cast(dict[str, Any], row["payload"]),
+        created_at=cast(datetime, row["created_at"]),
+    )
+
+
 _TERMINAL = {
     InvestigationStatus.COMPLETED,
     InvestigationStatus.CANCELLED,
@@ -307,4 +478,15 @@ CREATE TABLE IF NOT EXISTS investigations (
 );
 CREATE INDEX IF NOT EXISTS investigations_claim_idx
 ON investigations (run_requested, status, lease_expires, created_at);
+
+CREATE TABLE IF NOT EXISTS investigation_events (
+    event_id bigserial PRIMARY KEY,
+    investigation_id text NOT NULL REFERENCES investigations(investigation_id) ON DELETE CASCADE,
+    event_type text NOT NULL,
+    status text NOT NULL,
+    payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS investigation_events_stream_idx
+ON investigation_events (investigation_id, event_id);
 """

@@ -2,7 +2,7 @@
 
 AI-SRE Copilot 是一个面向中小研发团队的智能故障调查与安全处置系统。它从告警出发，关联指标、日志、链路、Kubernetes 事件、发布记录和历史事故，输出带证据的根因假设、处置建议与复盘报告。
 
-项目已完成阶段 0～3。Python 调查工作流已通过确定性门禁、PostgreSQL 跨实例恢复和真实模型五故障在线验收；下一阶段进入知识检索与证据工作台。V1 聚焦“调查正确、证据可查、安全可控”，不追求无人值守自愈。
+项目已完成阶段 0～4。系统已经具备可恢复的调查工作流、PostgreSQL + pgvector 混合知识检索、持久事件流和可追溯证据工作台；下一阶段进入人在回路与隔离处置。V1 聚焦“调查正确、证据可查、安全可控”，不追求无人值守自愈。
 
 ## 核心原则
 
@@ -43,6 +43,7 @@ Observable Testbed
 8. [阶段 1 验收记录](docs/08-stage1-validation.md)
 9. [阶段 2 验收记录](docs/09-stage2-validation.md)
 10. [阶段 3 验收记录](docs/10-stage3-validation.md)
+11. [阶段 4 验收记录](docs/11-stage4-validation.md)
 
 ## 当前可运行基线
 
@@ -95,6 +96,23 @@ AI_SRE_MODEL_API_KEY=... \
 AI_SRE_MODEL_ID=... \
 make eval-online
 ```
+
+阶段 4 的知识导入、实际 pgvector、SSE/快照和 Web 工作台门禁为：
+
+```bash
+make acceptance-stage4
+
+# 使用线上 OpenAI-compatible embedding 服务导入知识目录
+AI_SRE_DATABASE_URL=postgresql://ai_sre:local-development-only@127.0.0.1:5432/ai_sre \
+AI_SRE_EMBEDDING_BASE_URL=https://provider.example/v1 \
+AI_SRE_EMBEDDING_API_KEY=... \
+AI_SRE_EMBEDDING_MODEL_ID=... \
+uv run --project services/investigation ai-sre-ingest knowledge/catalog.json
+```
+
+离线检索报告写入忽略提交的 `artifacts/stage4-retrieval.{json,md}`。当前基线明确暴露
+PostgreSQL `simple` 词法配置对无空格中文查询的不足，不把离线 Hash embedding 指标解释为
+线上语义模型质量。
 
 阶段 1 的可观测测试床使用独立 Compose 项目，避免拖慢日常工程基线：
 
