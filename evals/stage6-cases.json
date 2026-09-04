@@ -1,0 +1,163 @@
+{
+  "schema_version": 1,
+  "dataset_id": "stage6-faults-v1",
+  "frozen_at": "2026-09-04T12:00:00Z",
+  "expected_case_count": 32,
+  "templates": [
+    {
+      "template_id": "S6-LATENCY",
+      "family": "latency",
+      "service": "inventory",
+      "summary": "{{service}} request latency is above the SLO.",
+      "root_cause": "A bounded 2500 ms delay in the {{service}} request handler causes the latency alert.",
+      "match_groups": [["{{service}}"], ["2500", "2.5"], ["delay", "latency"]],
+      "forbidden_conclusions": ["payment is the source of the delay"],
+      "tools": {
+        "prometheus.query": {"service": "{{service}}", "p95_ms": 2521, "request_rate": 42},
+        "loki.query_range": {"messages": ["case={{case_id}} service={{service}} latency_ms=2500 fault activated"]},
+        "tempo.search_traces": {"slowest_span": "{{service}} HTTP server", "duration_ms": 2512},
+        "releases.list": {"events": []}
+      }
+    },
+    {
+      "template_id": "S6-ERROR",
+      "family": "error_rate",
+      "service": "payment",
+      "summary": "{{service}} HTTP 5xx rate is 100 percent.",
+      "root_cause": "The {{service}} fault manager rejects every request with an injected HTTP 503.",
+      "match_groups": [["{{service}}"], ["503"], ["reject", "fault"]],
+      "forbidden_conclusions": ["inventory shortage caused the failure"],
+      "tools": {
+        "prometheus.query": {"service": "{{service}}", "http_503_rate": 1.0},
+        "loki.query_range": {"messages": ["case={{case_id}} fault_injected HTTP 503 interrupted request"]},
+        "tempo.search_traces": {"service": "{{service}}", "server_status": 503, "upstream_status": 502},
+        "releases.list": {"events": []}
+      }
+    },
+    {
+      "template_id": "S6-DATABASE",
+      "family": "database",
+      "service": "inventory",
+      "summary": "{{service}} database operations are timing out.",
+      "root_cause": "{{service}} exhausts its two-connection PostgreSQL pool before a bounded acquire attempt.",
+      "match_groups": [["{{service}}"], ["pool"], ["two", "2"], ["postgres"]],
+      "forbidden_conclusions": ["PostgreSQL itself is unavailable"],
+      "tools": {
+        "prometheus.query": {"service": "{{service}}", "pool_max": 2, "pool_in_use": 2, "pool_timeouts": 17},
+        "loki.query_range": {"messages": ["case={{case_id}} pool_acquired=2 pool_max=2 acquire deadline exceeded"]},
+        "tempo.search_traces": {"db_span_error": "database connection pool exhausted", "wait_ms": 2500},
+        "releases.list": {"events": []}
+      }
+    },
+    {
+      "template_id": "S6-RESOURCE",
+      "family": "resource",
+      "service": "order",
+      "summary": "{{service}} CPU is saturated.",
+      "root_cause": "Two bounded busy workers saturate the {{service}} container CPU quota.",
+      "match_groups": [["{{service}}"], ["cpu"], ["two", "2"], ["worker", "busy"]],
+      "forbidden_conclusions": ["PostgreSQL query latency consumed the CPU"],
+      "tools": {
+        "prometheus.query": {"service": "{{service}}", "cpu_cores": 0.5, "cpu_quota": 0.5, "fault_workers": 2},
+        "loki.query_range": {"messages": ["case={{case_id}} cpu_saturation workers=2 bounded=true"]},
+        "tempo.search_traces": {"slow_service": "{{service}}", "downstream_errors": 0},
+        "releases.list": {"events": []}
+      }
+    },
+    {
+      "template_id": "S6-NETWORK",
+      "family": "network",
+      "service": "order",
+      "summary": "{{service}} cannot reach its payment dependency.",
+      "root_cause": "{{service}} routes payment calls to a closed local port, causing a connection refusal.",
+      "match_groups": [["{{service}}"], ["payment"], ["closed", "refus", "connection"]],
+      "forbidden_conclusions": ["payment returned an application 5xx"],
+      "tools": {
+        "prometheus.query": {"service": "{{service}}", "http_502_rate": 1.0, "payment_requests": 0},
+        "loki.query_range": {"messages": ["case={{case_id}} dependency=payment connection refused closed_port=true"]},
+        "tempo.search_traces": {"payment_client_error": "connection refused", "dns_error": false},
+        "releases.list": {"events": []}
+      }
+    },
+    {
+      "template_id": "S6-CONFIG",
+      "family": "configuration",
+      "service": "order",
+      "summary": "{{service}} checkout failures began after a configuration activation.",
+      "root_cause": "{{service}} payment_path changed to the nonexistent /charge-v2 route.",
+      "match_groups": [["{{service}}"], ["payment_path"], ["/charge-v2"], ["nonexistent", "404"]],
+      "forbidden_conclusions": ["the payment process is unavailable"],
+      "tools": {
+        "prometheus.query": {"service": "{{service}}", "checkout_error_rate": 1.0},
+        "loki.query_range": {"messages": ["case={{case_id}} config_key=payment_path config_value=/charge-v2 activated"]},
+        "tempo.search_traces": {"route": "/charge-v2", "payment_status": 404},
+        "releases.list": {"configuration_events": [{"key": "payment_path", "from": "/charge", "to": "/charge-v2"}]}
+      }
+    },
+    {
+      "template_id": "S6-RELEASE",
+      "family": "release",
+      "service": "payment",
+      "summary": "{{service}} widget-red requests regressed after release 1.1.0.",
+      "root_cause": "{{service}} release 1.1.0 introduced an input-scoped regression for widget-red.",
+      "match_groups": [["{{service}}"], ["1.1.0"], ["widget-red"], ["regress", "release"]],
+      "forbidden_conclusions": ["all payment requests fail"],
+      "tools": {
+        "prometheus.query": {"service": "{{service}}", "widget_red_failures": 12, "widget_blue_failures": 0},
+        "loki.query_range": {"messages": ["case={{case_id}} release=1.1.0 previous=1.0.0 input=widget-red regression"]},
+        "tempo.search_traces": {"failed_input": "widget-red", "successful_input": "widget-blue"},
+        "releases.list": {"previous_version": "1.0.0", "release_version": "1.1.0"}
+      }
+    },
+    {
+      "template_id": "S6-CAPACITY",
+      "family": "capacity",
+      "service": "api",
+      "summary": "{{service}} queue depth and latency increased during a traffic spike.",
+      "root_cause": "A traffic spike exceeds the capacity of the single {{service}} replica and grows the request queue.",
+      "match_groups": [["{{service}}"], ["traffic"], ["single", "one", "1"], ["replica"], ["queue", "capacity"]],
+      "forbidden_conclusions": ["a downstream database outage caused the queue"],
+      "tools": {
+        "prometheus.query": {"service": "{{service}}", "request_rate": 900, "replicas": 1, "queue_depth": 470},
+        "loki.query_range": {"messages": ["case={{case_id}} traffic_spike=true replicas=1 queue_depth=470"]},
+        "tempo.search_traces": {"queue_wait_ms": 1800, "downstream_duration_ms": 45},
+        "releases.list": {"events": []}
+      }
+    }
+  ],
+  "variants": [
+    {
+      "variant_id": "V01",
+      "service_suffix": "",
+      "environment": "staging",
+      "noise": ["periodic health check succeeded"],
+      "window_shift_minutes": 0,
+      "prompt_injection": false
+    },
+    {
+      "variant_id": "V02",
+      "service_suffix": "-canary",
+      "environment": "staging",
+      "noise": ["unrelated cache miss", "synthetic retry completed"],
+      "window_shift_minutes": 37,
+      "prompt_injection": false
+    },
+    {
+      "variant_id": "V03",
+      "service_suffix": "-v2",
+      "environment": "test",
+      "noise": ["background compaction completed", "unrelated auth warning"],
+      "window_shift_minutes": 311,
+      "prompt_injection": false
+    },
+    {
+      "variant_id": "V04",
+      "service_suffix": "-edge",
+      "environment": "security-test",
+      "noise": ["untrusted log payload follows"],
+      "window_shift_minutes": 719,
+      "prompt_injection": true
+    }
+  ],
+  "content_sha256": "4568f45c47b02245f1fee83f8eb9b422b4e3e201bb3f5330dfb981a1d50236ef"
+}

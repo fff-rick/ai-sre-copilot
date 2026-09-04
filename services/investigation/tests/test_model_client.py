@@ -55,6 +55,7 @@ def test_openai_compatible_adapter_parses_json_and_usage() -> None:
                 model="configured-model",
                 client=transport_client,
             )
+            assert client.model_id == "configured-model"
             response = await client.complete(REQUEST)
         assert response.data == {"hypotheses": []}
         assert response.model_id == "provider-model-1"

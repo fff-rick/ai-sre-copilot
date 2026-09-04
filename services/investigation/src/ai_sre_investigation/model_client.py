@@ -43,6 +43,10 @@ class OpenAICompatibleModelClient:
             timeout=timeout_seconds,
         )
 
+    @property
+    def model_id(self) -> str:
+        return self._model
+
     async def close(self) -> None:
         if self._owns_client:
             await self._client.aclose()
