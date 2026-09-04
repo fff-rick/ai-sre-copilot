@@ -2,7 +2,7 @@ SHELL := /bin/bash
 
 .DEFAULT_GOAL := help
 
-.PHONY: help bootstrap proto proto-check format lint test test-python test-go test-web test-testbed test-integration test-kind test-stage3-restart test-stage4-postgres test-stage5-kind eval-offline eval-online eval-retrieval acceptance-stage2 acceptance-stage3 acceptance-stage4 acceptance-stage5 build compose-up compose-down compose-config testbed-up testbed-down testbed-smoke testbed-validate clean
+.PHONY: help bootstrap proto proto-check format lint test test-python test-go test-web test-testbed test-integration test-kind test-stage3-restart test-stage4-postgres test-stage5-kind eval-stage3-smoke eval-stage3-online eval-offline eval-online eval-retrieval acceptance-stage2 acceptance-stage3 acceptance-stage4 acceptance-stage5 acceptance-stage6 build compose-up compose-down compose-config testbed-up testbed-down testbed-smoke testbed-validate clean
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\n"} /^[a-zA-Z_-]+:.*?## / {printf "  %-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -61,18 +61,26 @@ test-stage4-postgres: ## Verify pgvector retrieval and durable SSE event replay
 	docker compose up -d --wait postgres
 	cd services/investigation && uv run ../../scripts/verify-stage4.py
 
-eval-offline: ## Run the five-case stage-3 Fake Model evaluation
+eval-stage3-smoke: ## Run the five-case stage-3 Fake Model smoke evaluation
 	cd services/investigation && uv run ../../evals/run_stage3.py --mode fake
 
-eval-online: ## Run the five-case stage-3 real-model evaluation (requires model env vars)
+eval-stage3-online: ## Run the five-case stage-3 real-model smoke evaluation
 	mkdir -p artifacts
 	cd services/investigation && uv run ../../evals/run_stage3.py --mode online --output ../../artifacts/stage3-online.json
+
+eval-offline: ## Run the 32-case frozen stage-6 replay and quality gate
+	mkdir -p artifacts
+	cd services/investigation && uv run ../../evals/run_stage6.py --mode replay
+
+eval-online: ## Compare two prompts on 32 cases with the configured real model
+	mkdir -p artifacts
+	cd services/investigation && uv run ../../evals/run_stage6.py --mode online
 
 eval-retrieval: ## Run the independent stage-4 Recall@K retrieval baseline
 	mkdir -p artifacts
 	cd services/investigation && uv run ../../evals/run_stage4_retrieval.py --catalog ../../knowledge/catalog.json --dataset ../../evals/stage4-retrieval-cases.json --output ../../artifacts/stage4-retrieval.json --markdown-output ../../artifacts/stage4-retrieval.md
 
-acceptance-stage3: test lint test-stage3-restart eval-offline build compose-config ## Run the deterministic stage-3 gate
+acceptance-stage3: test lint test-stage3-restart eval-stage3-smoke build compose-config ## Run the deterministic stage-3 gate
 
 acceptance-stage4: test lint test-stage4-postgres eval-retrieval build compose-config ## Run the deterministic stage-4 gate
 
@@ -80,6 +88,8 @@ test-stage5-kind: ## Verify approval binding, idempotency, and isolated mutation
 	./scripts/verify-stage5-kind.sh
 
 acceptance-stage5: test lint proto-check build compose-config test-stage5-kind ## Run the complete stage-5 gate
+
+acceptance-stage6: test lint proto-check build compose-config eval-offline ## Run the stage-6 deterministic gate
 
 build: ## Build all three services
 	cd services/investigation && uv build

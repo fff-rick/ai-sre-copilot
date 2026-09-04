@@ -72,7 +72,29 @@ jobs:
       - run: cd services/investigation && uv run ruff format --check ../../scripts/verify-stage3.py ../../evals/run_stage3.py
       - run: cd services/investigation && uv run ruff check ../../scripts/verify-stage3.py ../../evals/run_stage3.py
       - run: make test-stage3-restart
+      - run: make eval-stage3-smoke
+
+  stage6-evaluation:
+    name: Stage 6 offline quality gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.12.9"
+          enable-cache: true
+      - run: uv sync --project services/investigation --frozen --all-groups
+      - run: cd services/investigation && uv run ruff format --check ../../evals/run_stage6.py
+      - run: cd services/investigation && uv run ruff check ../../evals/run_stage6.py
       - run: make eval-offline
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage6-evaluation-report
+          path: |
+            artifacts/stage6-report.json
+            artifacts/stage6-report.md
+            artifacts/stage6/checkpoints
 
   go:
     name: Go
