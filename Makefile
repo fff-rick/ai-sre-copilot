@@ -55,7 +55,7 @@ test-kind: ## Run Kubernetes connector acceptance in an ephemeral kind cluster
 acceptance-stage2: testbed-up testbed-smoke test lint build compose-config test-integration test-kind ## Run the complete stage-2 gate
 
 test-stage3-restart: ## Verify Python restart recovery with PostgreSQL checkpoints
-	docker compose up -d --wait postgres
+	@if ! timeout 1 bash -c 'true < /dev/tcp/127.0.0.1/5432' 2>/dev/null; then docker compose up -d --wait postgres; fi
 	cd services/investigation && uv run ../../scripts/verify-stage3.py
 
 test-stage4-postgres: ## Verify pgvector retrieval and durable SSE event replay
