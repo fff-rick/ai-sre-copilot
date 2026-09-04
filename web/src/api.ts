@@ -124,11 +124,90 @@ export interface InvestigationEvent {
   created_at: string;
 }
 
+export interface EvaluationMetrics {
+  case_count: number;
+  completion_rate: number;
+  top1_accuracy: number;
+  top3_accuracy: number;
+  evidence_validity: number;
+  unsupported_claim_rate: number;
+  read_tool_success_rate: number;
+  p50_duration_seconds: number;
+  p95_duration_seconds: number;
+  input_tokens: number;
+  output_tokens: number;
+  p50_cost_usd: number;
+  p95_cost_usd: number;
+  security_pass_rate: number;
+  trace_completeness: number;
+}
+
+export interface EvaluationReport {
+  schema_version: number;
+  dataset: string;
+  dataset_sha256: string;
+  mode: string;
+  commit: string;
+  generated_at: string;
+  gate_profile: string;
+  passed: boolean;
+  gate_failures: string[];
+  comparison: {
+    top1_accuracy_delta: number;
+    top3_accuracy_delta: number;
+    token_cost_proxy_change: number;
+  };
+  profiles: Array<{
+    prompt_version: string;
+    prompt_sha256: string;
+    model_id: string;
+    metrics: EvaluationMetrics;
+    family_metrics: Record<string, EvaluationMetrics>;
+    gate_failures: string[];
+    failed_cases: Array<{
+      case_id: string;
+      failure_categories: string[];
+      trace_id: string;
+    }>;
+  }>;
+}
+
+export interface CreateInvestigationInput {
+  service: string;
+  severity: "critical" | "warning" | "info";
+  summary: string;
+  sourceRef: string;
+}
+
 export async function listInvestigations(): Promise<InvestigationSummary[]> {
   const response = await request<{ items: InvestigationSummary[] }>(
     "/api/v1/investigations?limit=100",
   );
   return response.items;
+}
+
+export function createInvestigation(
+  input: CreateInvestigationInput,
+): Promise<StoredInvestigation> {
+  const end = new Date();
+  const start = new Date(end.getTime() - 10 * 60 * 1000);
+  return request("/api/v1/investigations", {
+    method: "POST",
+    body: JSON.stringify({
+      alert: {
+        alert_id: `manual-${crypto.randomUUID()}`,
+        service: input.service,
+        severity: input.severity,
+        summary: input.summary,
+        source_ref: input.sourceRef,
+        time_window: { start: start.toISOString(), end: end.toISOString() },
+      },
+    }),
+  });
+}
+
+export function getLatestEvaluation(): Promise<EvaluationReport> {
+  return request("/api/v1/evaluations/latest");
 }
 
 export function getInvestigation(id: string): Promise<StoredInvestigation> {

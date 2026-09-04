@@ -1,4 +1,4 @@
-FROM golang:1.26-bookworm AS builder
+FROM golang:1.26.7-bookworm AS builder
 
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -12,4 +12,3 @@ COPY --from=builder /out/testbed-service /usr/local/bin/testbed-service
 USER app
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/testbed-service"]
-

@@ -88,6 +88,68 @@ const timeline = {
   next_event_id: 2,
 };
 
+const evaluation = {
+  schema_version: 1,
+  dataset: "stage6-faults-v1",
+  dataset_sha256: "a".repeat(64),
+  mode: "replay",
+  commit: "b".repeat(40),
+  generated_at: "2026-09-04T00:00:00Z",
+  gate_profile: "evidence-first-v3",
+  passed: true,
+  gate_failures: [],
+  comparison: {
+    top1_accuracy_delta: 0.25,
+    top3_accuracy_delta: 0,
+    token_cost_proxy_change: 0.1,
+  },
+  profiles: [
+    {
+      prompt_version: "evidence-first-v3",
+      prompt_sha256: "c".repeat(64),
+      model_id: "frozen-replay-model-v1",
+      metrics: {
+        case_count: 32,
+        completion_rate: 1,
+        top1_accuracy: 1,
+        top3_accuracy: 1,
+        evidence_validity: 1,
+        unsupported_claim_rate: 0,
+        read_tool_success_rate: 1,
+        p50_duration_seconds: 0.01,
+        p95_duration_seconds: 0.02,
+        input_tokens: 100,
+        output_tokens: 50,
+        p50_cost_usd: 0.001,
+        p95_cost_usd: 0.002,
+        security_pass_rate: 1,
+        trace_completeness: 1,
+      },
+      family_metrics: {
+        latency: {
+          case_count: 4,
+          completion_rate: 1,
+          top1_accuracy: 1,
+          top3_accuracy: 1,
+          evidence_validity: 1,
+          unsupported_claim_rate: 0,
+          read_tool_success_rate: 1,
+          p50_duration_seconds: 0.01,
+          p95_duration_seconds: 0.02,
+          input_tokens: 10,
+          output_tokens: 5,
+          p50_cost_usd: 0.001,
+          p95_cost_usd: 0.002,
+          security_pass_rate: 1,
+          trace_completeness: 1,
+        },
+      },
+      gate_failures: [],
+      failed_cases: [],
+    },
+  ],
+};
+
 class FakeEventSource {
   static latest: FakeEventSource | null = null;
   onopen: (() => void) | null = null;
@@ -117,6 +179,9 @@ function installFetch(getStatus: () => string = () => "COMPLETED") {
     "fetch",
     vi.fn((input: string | URL | Request) => {
       const path = String(input);
+      if (path === "/api/v1/evaluations/latest") {
+        return jsonResponse(evaluation);
+      }
       if (path.includes("/timeline")) return jsonResponse(timeline);
       if (path.includes("/evidence/")) return jsonResponse({ evidence });
       if (path.includes("/approvals")) return jsonResponse([]);
@@ -320,5 +385,77 @@ describe("App", () => {
         screen.queryByRole("button", { name: "拒绝" }),
       ).not.toBeInTheDocument(),
     );
+  });
+
+  it("creates a bounded investigation from the Web console", async () => {
+    const fetchMock = vi.fn(
+      (input: string | URL | Request, init?: RequestInit) => {
+        const path = String(input);
+        if (path === "/api/v1/investigations" && init?.method === "POST") {
+          const body = JSON.parse(String(init.body)) as {
+            alert: { service: string; summary: string; time_window: object };
+          };
+          expect(body.alert.service).toBe("inventory");
+          expect(body.alert.summary).toBe("Inventory latency increased");
+          expect(body.alert.time_window).toBeDefined();
+          return jsonResponse(record("COLLECTING"));
+        }
+        if (path === "/api/v1/investigations?limit=100") {
+          return jsonResponse({ items: [record()] });
+        }
+        if (path.includes("/timeline")) return jsonResponse(timeline);
+        if (path.includes("/approvals")) return jsonResponse([]);
+        return jsonResponse(record());
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+    await screen.findByText("Payment error rate increased");
+    fireEvent.change(screen.getByLabelText("服务"), {
+      target: { value: "inventory" },
+    });
+    fireEvent.change(screen.getByLabelText("告警摘要"), {
+      target: { value: "Inventory latency increased" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "创建调查" }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/v1/investigations",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+  });
+
+  it("renders the versioned quality report and returns to investigations", async () => {
+    installFetch();
+    render(<App />);
+    expect(
+      (await screen.findAllByText("Payment error rate increased")).length,
+    ).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "质量报告" }));
+    expect(await screen.findByText("stage6-faults-v1")).toBeInTheDocument();
+    expect(screen.getByText("PASS")).toBeInTheDocument();
+    expect(screen.getByText("4")).toBeInTheDocument();
+    expect(screen.getByText("latency")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "调查" }));
+    expect(
+      (await screen.findAllByText("Payment error rate increased")).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("explains how to generate a missing evaluation report", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string | URL | Request) => {
+        if (String(input) === "/api/v1/evaluations/latest") {
+          return jsonResponse({}, false);
+        }
+        return jsonResponse({ items: [] });
+      }),
+    );
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "质量报告" }));
+    expect(await screen.findByText("尚无可展示的质量报告")).toBeInTheDocument();
+    expect(screen.getByText("make eval-offline")).toBeInTheDocument();
   });
 });

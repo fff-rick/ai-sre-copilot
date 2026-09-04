@@ -96,6 +96,37 @@ jobs:
             artifacts/stage6-report.md
             artifacts/stage6/checkpoints
 
+  stage7-release-candidate:
+    name: Stage 7 release candidate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.12.9"
+          enable-cache: true
+      - run: uv sync --project services/investigation --frozen --all-groups
+      - run: cd services/investigation && uv run ruff format --check ../../scripts/verify-stage7.py ../../scripts/build-release-manifest.py
+      - run: cd services/investigation && uv run ruff check ../../scripts/verify-stage7.py ../../scripts/build-release-manifest.py
+      - run: make eval-offline
+      - run: make eval-retrieval
+      - run: make verify-stage7
+      - run: make release-manifest
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage7-release-candidate
+          path: |
+            artifacts/stage7-acceptance.json
+            artifacts/stage7-acceptance.md
+            artifacts/release-manifest.json
+            artifacts/stage6-report.json
+            artifacts/stage6-report.md
+            artifacts/stage4-retrieval.json
+            artifacts/stage4-retrieval.md
+
   go:
     name: Go
     runs-on: ubuntu-latest

@@ -146,6 +146,46 @@ def test_worker_completes_created_investigation() -> None:
     asyncio.run(scenario())
 
 
+def test_bounded_worker_pool_completes_five_concurrent_investigations() -> None:
+    async def scenario() -> None:
+        service = make_service()
+        service._worker_count = 5
+        await service.start()
+        first_workers = tuple(service._workers.values())
+        await service.start()
+        assert tuple(service._workers.values()) == first_workers
+        try:
+            created = await asyncio.gather(*(service.create(alert()) for _ in range(5)))
+            identifiers = [item.investigation.investigation_id for item in created]
+            for _ in range(200):
+                records = await asyncio.gather(*(service.get(item) for item in identifiers))
+                if all(
+                    record is not None and record.status == InvestigationStatus.COMPLETED
+                    for record in records
+                ):
+                    assert len({record.investigation.trace_id for record in records if record}) == 5
+                    break
+                await asyncio.sleep(0.01)
+            else:
+                raise AssertionError("five concurrent investigations did not complete")
+        finally:
+            await service.stop()
+        assert not service._workers
+        assert not service._current_ids
+        assert all(worker.done() for worker in first_workers)
+
+    asyncio.run(scenario())
+
+
+def test_worker_pool_rejects_unbounded_concurrency() -> None:
+    with pytest.raises(ValueError, match="worker_count"):
+        InvestigationService(
+            repository=InMemoryInvestigationRepository(),
+            workflow=make_service().workflow,
+            worker_count=17,
+        )
+
+
 def test_read_model_timeline_evidence_and_sse_replay() -> None:
     async def scenario() -> None:
         service = make_service()
