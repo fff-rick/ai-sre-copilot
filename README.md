@@ -48,6 +48,7 @@ Observable Testbed
 11. [阶段 4 验收记录](docs/11-stage4-validation.md)
 12. [阶段 5 验收记录](docs/12-stage5-validation.md)
 13. [阶段 6 验收记录](docs/13-stage6-validation.md)
+14. [本地使用手册](docs/14-local-user-guide.md)
 
 ## 当前可运行基线
 
