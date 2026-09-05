@@ -1,5 +1,7 @@
 import {
   cleanup,
+  act,
+  within,
   fireEvent,
   render,
   screen,
@@ -216,18 +218,18 @@ describe("App", () => {
       await screen.findByText("Database connections are exhausted."),
     ).toBeInTheDocument();
     expect(screen.getByText("5 份证据")).toBeInTheDocument();
-    expect(screen.getByText("持久快照")).toBeInTheDocument();
+    expect(screen.getByText("历史记录")).toBeInTheDocument();
     expect(window.location.search).toContain("investigation=inv-stage4");
 
     fireEvent.click(screen.getByRole("button", { name: evidence.evidence_id }));
     expect(
-      await screen.findByRole("complementary", { name: "证据详情" }),
+      await screen.findByRole("dialog", { name: "证据详情" }),
     ).toBeInTheDocument();
     expect(screen.getByText(evidence.content_excerpt)).toBeInTheDocument();
     expect(screen.getByText(/payment timeout/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭证据详情" }));
     expect(
-      screen.queryByRole("complementary", { name: "证据详情" }),
+      screen.queryByRole("dialog", { name: "证据详情" }),
     ).not.toBeInTheDocument();
   });
 
@@ -241,14 +243,14 @@ describe("App", () => {
     ).toBeInTheDocument();
     await waitFor(() => expect(FakeEventSource.latest).not.toBeNull());
     expect(FakeEventSource.latest?.url).toContain("inv-stage4/events");
-    FakeEventSource.latest?.onopen?.();
+    act(() => FakeEventSource.latest?.onopen?.());
     expect(await screen.findByText("实时同步")).toBeInTheDocument();
-    FakeEventSource.latest?.onerror?.();
+    act(() => FakeEventSource.latest?.onerror?.());
     expect(await screen.findByText("正在重连")).toBeInTheDocument();
 
     currentStatus = "COMPLETED";
     FakeEventSource.latest?.listener?.();
-    expect(await screen.findByText("持久快照")).toBeInTheDocument();
+    expect(await screen.findByText("历史记录")).toBeInTheDocument();
     expect(FakeEventSource.latest?.close).toHaveBeenCalled();
   });
 
@@ -354,12 +356,12 @@ describe("App", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "提交审批" }));
     expect(
-      await screen.findByText("PENDING · medium risk", { exact: false }),
+      await screen.findByText("待审批 · 中风险", { exact: false }),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "更新参数" }));
     await waitFor(() =>
       expect(
-        screen.getByText("PENDING · medium risk", { exact: false }),
+        screen.getByText("待审批 · 中风险", { exact: false }),
       ).toBeInTheDocument(),
     );
     fireEvent.click(screen.getByRole("button", { name: "批准" }));
@@ -367,7 +369,7 @@ describe("App", () => {
       await screen.findByRole("button", { name: "执行并验证" }),
     ).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "执行并验证" }));
-    expect(await screen.findByText("恢复判定 · RECOVERED")).toBeInTheDocument();
+    expect(await screen.findByText("恢复判定 · 已恢复")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("动作"), {
       target: { value: "rollback" },
@@ -411,6 +413,7 @@ describe("App", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<App />);
     await screen.findByText("Payment error rate increased");
+    fireEvent.click(screen.getByRole("button", { name: /新建调查/ }));
     fireEvent.change(screen.getByLabelText("服务"), {
       target: { value: "inventory" },
     });
@@ -434,10 +437,10 @@ describe("App", () => {
     ).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "质量报告" }));
     expect(await screen.findByText("stage6-faults-v1")).toBeInTheDocument();
-    expect(screen.getByText("PASS")).toBeInTheDocument();
+    expect(screen.getByText("评估通过")).toBeInTheDocument();
     expect(screen.getByText("4")).toBeInTheDocument();
-    expect(screen.getByText("latency")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "调查" }));
+    expect(screen.getByText("响应延迟")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "故障调查" }));
     expect(
       (await screen.findAllByText("Payment error rate increased")).length,
     ).toBeGreaterThan(0);
@@ -456,6 +459,132 @@ describe("App", () => {
     render(<App />);
     fireEvent.click(screen.getByRole("button", { name: "质量报告" }));
     expect(await screen.findByText("尚无可展示的质量报告")).toBeInTheDocument();
-    expect(screen.getByText("make eval-offline")).toBeInTheDocument();
+    expect(screen.getByText(/请联系管理员生成评估报告/)).toBeInTheDocument();
+  });
+  it("filters by Chinese summary, service, ID and status without losing the selected detail", async () => {
+    const completed = record();
+    const active = record("COLLECTING");
+    active.investigation.investigation_id = "inv-order";
+    active.investigation.alert.service = "order-service";
+    active.investigation.alert.summary = "订单接口延迟升高";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string | URL | Request) => {
+        const path = String(input);
+        if (path.endsWith("?limit=100"))
+          return jsonResponse({ items: [completed, active] });
+        if (path.includes("/timeline")) return jsonResponse(timeline);
+        if (path.includes("/approvals")) return jsonResponse([]);
+        return jsonResponse(path.includes("inv-order") ? active : completed);
+      }),
+    );
+    render(<App />);
+    const list = within(
+      screen.getByRole("complementary", { name: "调查列表" }),
+    );
+    await list.findByText("订单接口延迟升高");
+    fireEvent.change(screen.getByRole("searchbox"), {
+      target: { value: "订单" },
+    });
+    expect(list.queryByText("payment")).not.toBeInTheDocument();
+    expect(list.getByText("订单接口延迟升高")).toBeInTheDocument();
+    fireEvent.change(screen.getByRole("searchbox"), {
+      target: { value: " ORDER-SERVICE " },
+    });
+    expect(list.getByText("order-service")).toBeInTheDocument();
+    fireEvent.change(screen.getByRole("searchbox"), {
+      target: { value: "inv-order" },
+    });
+    fireEvent.change(screen.getByLabelText("筛选调查状态"), {
+      target: { value: "COMPLETED" },
+    });
+    expect(list.getByText(/没有匹配的调查/)).toBeInTheDocument();
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "" } });
+    expect(list.getByText("payment")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("筛选调查状态"), {
+      target: { value: "active" },
+    });
+    fireEvent.click(list.getByRole("button", { name: /order-service/ }));
+    expect(
+      await screen.findByText("调查正在进行，结论将在校验后写入。"),
+    ).toBeInTheDocument();
+    expect(window.location.search).toContain("inv-order");
+  });
+
+  it("retains the Chinese draft on cancel or failure and rejects whitespace-only input", async () => {
+    installFetch();
+    render(<App />);
+    await screen.findByText("Database connections are exhausted.");
+    fireEvent.click(screen.getByRole("button", { name: /新建调查/ }));
+    fireEvent.change(screen.getByLabelText("服务"), { target: { value: " " } });
+    fireEvent.change(screen.getByLabelText("告警摘要"), {
+      target: { value: "支付请求超时" },
+    });
+    fireEvent.change(screen.getByLabelText("严重度"), {
+      target: { value: "warning" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "创建调查" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("不能只输入空格");
+    fireEvent.change(screen.getByLabelText("服务"), {
+      target: { value: "payment" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /新建调查/ }));
+    expect(screen.getByLabelText("告警摘要")).toHaveValue("支付请求超时");
+    expect(screen.getByLabelText("严重度")).toHaveValue("warning");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => jsonResponse({}, false)),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "创建调查" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "已填写的内容会保留",
+    );
+    expect(screen.getByLabelText("告警摘要")).toHaveValue("支付请求超时");
+    fireEvent(
+      screen.getByRole("dialog"),
+      new Event("cancel", { cancelable: true }),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("allows retrying a failed list load and distinguishes an empty list", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => jsonResponse({}, false)),
+    );
+    render(<App />);
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: "刷新列表" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "无法读取调查列表",
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => jsonResponse({ items: [] })),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "刷新列表" })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "刷新列表" }));
+    expect(await screen.findByText(/暂无调查记录，点击/)).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("handles an evaluation with no profiles as unavailable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string | URL | Request) =>
+        jsonResponse(
+          String(input).includes("evaluations")
+            ? { ...evaluation, profiles: [] }
+            : { items: [] },
+        ),
+      ),
+    );
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "质量报告" }));
+    expect(await screen.findByText("尚无可展示的质量报告")).toBeInTheDocument();
   });
 });
