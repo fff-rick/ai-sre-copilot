@@ -229,14 +229,16 @@ class InvestigationWorkflow:
                 "tool_name": "prometheus.query",
                 "arguments": {
                     "promql": (
-                        f'sum(rate(http_requests_total{{service="{service}",status=~"5.."}}[5m]))'
+                        "sum(rate(testbed_http_server_requests_total{"
+                        f'service_name="{service}",http_response_status_code=~"5.."'
+                        "}[5m]))"
                     )
                 },
             },
             {
                 "tool_name": "loki.query_range",
                 "arguments": {
-                    "logql": f'{{service="{service}"}} |= "error"',
+                    "logql": f'{{service_name="{service}"}} |= "error"',
                     "start": start,
                     "end": end,
                     "limit": 100,

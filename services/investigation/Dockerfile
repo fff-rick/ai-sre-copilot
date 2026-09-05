@@ -1,4 +1,4 @@
-FROM ghcr.io/astral-sh/uv:python3.14-bookworm-slim
+FROM ghcr.io/astral-sh/uv:0.12.8-python3.14-trixie-slim
 
 WORKDIR /app
 
@@ -16,4 +16,3 @@ USER 65532:65532
 EXPOSE 8000
 
 CMD ["uvicorn", "ai_sre_investigation.main:app", "--host", "0.0.0.0", "--port", "8000"]
-

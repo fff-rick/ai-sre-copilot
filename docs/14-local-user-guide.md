@@ -11,12 +11,12 @@ Web 前端已经接入真实后端，不是静态 Mock。浏览器请求由 Ngin
 |---|---|---|
 | 可观测测试业务链路 | 已实现 | `make testbed-up` |
 | 调查列表、时间线、根因与证据 | Web 已接通 | 浏览器访问 `http://localhost:5173` |
-| 创建调查 | 后端已实现，Web 尚无表单 | Swagger 或 `curl` |
+| 创建调查 | Web 已接通 | 左侧“新建调查”表单、Swagger 或 `curl` |
 | 调查模型调用 | 已实现 | 必须配置支持严格 JSON Schema 的 OpenAI-compatible 模型 |
 | Runbook/历史事故检索 | 已实现，可选 | 配置 Embedding 并导入知识目录 |
 | 提交、修改、批准和拒绝 | Web 已接通 | 默认 Compose 可体验 |
 | 重启、扩缩容和回滚 | 仅允许隔离 kind | 使用 `make test-stage5-kind` 自动验收，不建议连接生产集群 |
-| 阶段 6 评测报告 | 已实现为 Artifact | `make eval-offline`；Web 尚无报告页面 |
+| 阶段 6/7 质量报告 | Web 已接通脱敏投影 | `make eval-offline` 后点击“质量报告” |
 
 默认 Compose 没有 Kubernetes kubeconfig，因此 Web 中“执行并验证”会被可信工具网关拒绝。
 这是 fail-closed 安全行为，不是前端断线。审批令牌只保存在当前浏览器内存中，批准后刷新页面
@@ -71,6 +71,7 @@ AI_SRE_MODEL_ID=replace-with-model-id
 先启动测试业务和可观测组件，再启动 Copilot：
 
 ```bash
+make eval-offline
 make testbed-up
 make testbed-smoke
 make compose-up
@@ -156,8 +157,7 @@ INVESTIGATION_ID=$(echo "$CREATE_RESPONSE" | jq -r '.investigation.investigation
 echo "http://localhost:5173/?investigation=$INVESTIGATION_ID"
 ```
 
-打开输出的 Web 地址。如果页面此前一直处于“暂无调查记录”，创建后刷新一次浏览器。随后可
-观察：
+也可直接打开 Web，在左侧填写服务、严重度和摘要后点击“创建调查”。打开对应调查后可观察：
 
 1. 左侧调查状态和严重级别。
 2. 调查节点通过 SSE 进入时间线。
@@ -246,7 +246,7 @@ make test-stage5-kind
 幂等、重启、扩缩容和回滚，结束后自动删除集群。它是跨进程安全验收，不提供交互式 Web
 会话。不要将默认 Web 工作台连接到生产 kubeconfig。
 
-## 9. 运行阶段 6 离线评测
+## 9. 运行质量门禁与阶段 7 演示
 
 ```bash
 make bootstrap
@@ -268,6 +268,28 @@ AI_SRE_MODEL_OUTPUT_USD_PER_MILLION=... \
 make eval-online
 ```
 
+阶段 7 的并发、降级、资源、安全、全部历史门禁和发布来源清单：
+
+```bash
+make acceptance-stage7
+```
+
+已有有效模型配置时，可运行固定产品演示；它会包含 100% 错误率故障、带证据调查、未审批
+执行被 403 阻断、拒绝申请和故障恢复，不只展示成功路径：
+
+```bash
+set -a
+source .env
+set +a
+./demo/run-stage7.sh
+
+# 安装 asciinema 后可录制为 artifacts/stage7-demo.cast
+./demo/record-stage7.sh
+
+# 回放仓库内已验收的真实模型演示
+uvx asciinema play demo/stage7-demo.cast
+```
+
 ## 10. 常见问题
 
 ### Web 显示“无法读取调查列表”
@@ -286,12 +308,11 @@ docker compose exec investigation env | grep '^AI_SRE_MODEL_' | sed 's/=.*/=<con
 当前适配器调用 `/chat/completions` 并要求严格 JSON Schema。只支持普通 JSON mode、但不支持
 `json_schema` 的兼容服务不能直接运行完整调查，需要更换端点或扩展模型适配器。
 
-### 调查有证据但结论质量一般
+### 调查报告出现 evidence gap
 
-当前在线调查查询模板与测试床的 OpenTelemetry 导出名称还没有完全统一：部分 Prometheus
-指标和 Loki 标签可能返回空结果，而不是测试床没有产生数据。可先在 Grafana/Prometheus/
-Loki 确认原始观测，再查看报告中的 `evidence_gaps`。这是当前产品化缺口，不能通过反复调大
-模型预算解决。
+工作流使用测试床实际导出的 OpenTelemetry Prometheus 名称和 Loki `service_name` 标签。若仍有
+空结果，先确认故障后已产生业务流量并等待至少一个采集周期，再在 Prometheus/Loki 检查原始
+数据。单个数据源不可用时系统会明确记录 evidence gap，而不会伪造证据。
 
 ### Web 执行变更失败
 
@@ -325,9 +346,9 @@ docker compose -f testbed/compose.yaml down -v
 ## 12. 推荐体验顺序
 
 1. 先运行 `make testbed-up && make testbed-smoke`，在 Grafana 查看正常调用链。
-2. 配置模型并运行 `make compose-up`，通过 curl 创建一条调查，在 Web 查看时间线和证据。
+2. 配置模型并运行 `make eval-offline && make compose-up`，在 Web 创建调查并查看时间线和证据。
 3. 注入 `errors-payment` 或 `latency-inventory`，比较故障前后的观测和调查结果。
 4. 在 Web 体验审批状态，但用 `make test-stage5-kind` 验证真正的隔离变更。
-5. 最后运行 `make eval-offline` 查看 32 用例质量报告。
+5. 最后在 Web 查看 32 用例质量报告，并运行 `make acceptance-stage7` 复核发布候选。
 
 这个顺序能展示工程边界，又不会把首次体验变成 Kubernetes 网络和证书配置工作。

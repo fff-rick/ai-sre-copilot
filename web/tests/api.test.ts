@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  createInvestigation,
   getEvidence,
   getInvestigation,
+  getLatestEvaluation,
   getTimeline,
   approveApproval,
   executeApproval,
@@ -19,13 +21,15 @@ describe("investigation API", () => {
   it("unwraps list, timeline and evidence responses", async () => {
     const fetchMock = vi.fn((input: string | URL | Request) => {
       const path = String(input);
-      const value = path.includes("timeline")
-        ? { items: [{ event_id: 1 }] }
-        : path.includes("evidence")
-          ? { evidence: { evidence_id: "ev-1" } }
-          : path.includes("?limit")
-            ? { items: [{ status: "COMPLETED" }] }
-            : { status: "COMPLETED" };
+      const value = path.includes("evaluations")
+        ? { dataset: "stage6-faults-v1" }
+        : path.includes("timeline")
+          ? { items: [{ event_id: 1 }] }
+          : path.includes("evidence")
+            ? { evidence: { evidence_id: "ev-1" } }
+            : path.includes("?limit")
+              ? { items: [{ status: "COMPLETED" }] }
+              : { status: "COMPLETED" };
       return Promise.resolve({
         ok: true,
         status: 200,
@@ -38,6 +42,13 @@ describe("investigation API", () => {
     expect((await getInvestigation("inv /1")).status).toBe("COMPLETED");
     expect(await getTimeline("inv /1")).toHaveLength(1);
     expect((await getEvidence("inv /1", "ev /1")).evidence_id).toBe("ev-1");
+    expect((await getLatestEvaluation()).dataset).toBe("stage6-faults-v1");
+    await createInvestigation({
+      service: "payment",
+      severity: "critical",
+      summary: "errors",
+      sourceRef: "test://web",
+    });
     expect(
       fetchMock.mock.calls.some(([url]) => String(url).includes("inv%20%2F1")),
     ).toBe(true);

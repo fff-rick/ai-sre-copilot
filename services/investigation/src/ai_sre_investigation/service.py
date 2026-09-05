@@ -29,30 +29,37 @@ class InvestigationService:
         workflow: InvestigationWorkflow,
         remediation: RemediationService | None = None,
         poll_seconds: float = 0.1,
+        worker_count: int = 1,
     ) -> None:
+        if not 1 <= worker_count <= 16:
+            raise ValueError("worker_count must be between 1 and 16")
         self.repository = repository
         self.workflow = workflow
         self.remediation = remediation
         self._poll_seconds = poll_seconds
+        self._worker_count = worker_count
         self._wake = asyncio.Event()
-        self._worker: asyncio.Task[None] | None = None
-        self._worker_id = f"worker-{uuid4()}"
-        self._current_id: str | None = None
+        self._workers: dict[str, asyncio.Task[None]] = {}
+        self._current_ids: dict[str, str] = {}
 
     async def start(self) -> None:
-        if self._worker is None:
-            self._worker = asyncio.create_task(self._run_worker(), name=self._worker_id)
+        if self._workers:
+            return
+        for _ in range(self._worker_count):
+            worker_id = f"worker-{uuid4()}"
+            self._workers[worker_id] = asyncio.create_task(
+                self._run_worker(worker_id), name=worker_id
+            )
 
     async def stop(self) -> None:
-        if self._worker is None:
+        if not self._workers:
             return
-        self._worker.cancel()
-        with suppress(asyncio.CancelledError):
-            await self._worker
-        if self._current_id:
-            await self.repository.release_claim(self._current_id)
-        self._current_id = None
-        self._worker = None
+        workers = list(self._workers.values())
+        for worker in workers:
+            worker.cancel()
+        await asyncio.gather(*workers, return_exceptions=True)
+        self._workers.clear()
+        self._current_ids.clear()
 
     async def create(
         self,
@@ -104,18 +111,18 @@ class InvestigationService:
         self._wake.set()
         return changed
 
-    async def _run_worker(self) -> None:
+    async def _run_worker(self, worker_id: str) -> None:
         while True:
-            item = await self.repository.claim_next(self._worker_id)
+            item = await self.repository.claim_next(worker_id)
             if item is None:
                 self._wake.clear()
                 with suppress(TimeoutError):
                     await asyncio.wait_for(self._wake.wait(), timeout=self._poll_seconds)
                 continue
-            self._current_id = item.investigation_id
+            self._current_ids[worker_id] = item.investigation_id
             heartbeat = asyncio.create_task(
-                self._renew_lease(item.investigation_id),
-                name=f"{self._worker_id}-lease",
+                self._renew_lease(item.investigation_id, worker_id),
+                name=f"{worker_id}-lease",
             )
             try:
                 snapshot = await self.workflow.graph.aget_state(
@@ -137,10 +144,10 @@ class InvestigationService:
                 heartbeat.cancel()
                 with suppress(asyncio.CancelledError):
                     await heartbeat
-                self._current_id = None
+                self._current_ids.pop(worker_id, None)
 
-    async def _renew_lease(self, investigation_id: str) -> None:
+    async def _renew_lease(self, investigation_id: str, worker_id: str) -> None:
         while True:
             await asyncio.sleep(1)
-            if not await self.repository.renew_claim(investigation_id, self._worker_id):
+            if not await self.repository.renew_claim(investigation_id, worker_id):
                 return

@@ -12,6 +12,7 @@ from fastapi.responses import StreamingResponse
 
 from ai_sre_investigation import __version__
 from ai_sre_investigation.config import Settings, get_settings
+from ai_sre_investigation.evaluation_report import EvaluationReport, load_evaluation_report
 from ai_sre_investigation.models import (
     ApproveRequest,
     CancelResponse,
@@ -82,6 +83,25 @@ def create_app(
             status="ready",
             environment=active_settings.environment,
         )
+
+    @application.get(
+        "/api/v1/evaluations/latest",
+        response_model=EvaluationReport,
+        tags=["evaluations"],
+    )
+    async def latest_evaluation() -> EvaluationReport:
+        try:
+            return await asyncio.to_thread(
+                load_evaluation_report,
+                active_settings.evaluation_report_path,
+                active_settings.evaluation_report_max_bytes,
+            )
+        except FileNotFoundError as error:
+            raise HTTPException(
+                status_code=404, detail="evaluation report is not available"
+            ) from error
+        except (OSError, ValueError) as error:
+            raise HTTPException(status_code=503, detail="evaluation report is invalid") from error
 
     @application.post(
         "/api/v1/investigations",

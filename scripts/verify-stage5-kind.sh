@@ -6,6 +6,7 @@ cluster_name=ai-sre-stage5
 acceptance_dir=$(mktemp -d /tmp/ai-sre-stage5-kind.XXXXXX)
 gateway_pid=""
 database_url=${STAGE5_DATABASE_URL:-postgresql://ai_sre:local-development-only@127.0.0.1:5432/ai_sre}
+node_image=${KIND_NODE_IMAGE:-kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5}
 
 cleanup() {
   if [[ -n "${gateway_pid}" ]]; then
@@ -25,6 +26,7 @@ if [[ -z "${STAGE5_DATABASE_URL:-}" ]]; then
 fi
 kind create cluster \
   --name "${cluster_name}" \
+  --image "${node_image}" \
   --wait 120s \
   --kubeconfig "${acceptance_dir}/kubeconfig"
 

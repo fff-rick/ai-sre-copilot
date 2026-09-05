@@ -1,9 +1,19 @@
 # Web
 
-React/TypeScript 人机协作界面。阶段 0 仅验证严格 TypeScript、构建、测试和静态交付；后续只通过 Investigation Service API 访问领域能力。
+React / TypeScript 中文运维工作台，通过 Investigation Service API 访问调查、证据、审批和质量报告。
 
 ```bash
 pnpm install
 pnpm dev
 pnpm test
+pnpm lint
+pnpm build
 ```
+
+开发地址由 Vite 启动输出提供，`/api` 默认代理到 `http://127.0.0.1:8000`。
+
+界面使用本地中文系统字体和浅色布局，无外部字体或 UI 库依赖。调查列表支持按服务、告警摘要、调查编号搜索和按状态筛选；概览统计基于接口返回的最近 100 条记录。新建调查分析最近 10 分钟，取消或请求失败时保留输入。
+
+时间统一显示为北京时间（UTC+8），采用年月日和 24 小时制。状态及操作文案集中在 `src/locale.ts`；服务标识、证据原文和模型生成的报告保留原始内容，未知枚举回退显示原值。评估成本保持接口中的美元口径。
+
+桌面使用列表与详情双栏，窄屏改为纵向布局；新建弹窗与证据抽屉使用原生 `dialog`，支持键盘焦点约束、Esc 关闭和关闭后焦点恢复。质量报告缺失时，管理员可在仓库根目录运行 `make eval-offline` 生成报告。

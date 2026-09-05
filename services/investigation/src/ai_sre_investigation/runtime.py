@@ -89,7 +89,10 @@ async def production_service(  # pragma: no cover - exercised by compose accepta
             validation_delay_seconds=settings.remediation_validation_delay_seconds,
         )
         service = InvestigationService(
-            repository=repository, workflow=workflow, remediation=remediation
+            repository=repository,
+            workflow=workflow,
+            remediation=remediation,
+            worker_count=settings.investigation_workers,
         )
         await service.start()
         try:

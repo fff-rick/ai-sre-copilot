@@ -2,7 +2,7 @@ SHELL := /bin/bash
 
 .DEFAULT_GOAL := help
 
-.PHONY: help bootstrap proto proto-check format lint test test-python test-go test-web test-testbed test-integration test-kind test-stage3-restart test-stage4-postgres test-stage5-kind eval-stage3-smoke eval-stage3-online eval-offline eval-online eval-retrieval acceptance-stage2 acceptance-stage3 acceptance-stage4 acceptance-stage5 acceptance-stage6 build compose-up compose-down compose-config testbed-up testbed-down testbed-smoke testbed-validate clean
+.PHONY: help bootstrap proto proto-check format lint test test-python test-go test-web test-testbed test-integration test-kind test-stage3-restart test-stage4-postgres test-stage5-kind eval-stage3-smoke eval-stage3-online eval-offline eval-online eval-retrieval verify-stage7 release-manifest acceptance-stage2 acceptance-stage3 acceptance-stage4 acceptance-stage5 acceptance-stage6 acceptance-stage7 build compose-up compose-down compose-config testbed-up testbed-down testbed-smoke testbed-validate clean
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\n"} /^[a-zA-Z_-]+:.*?## / {printf "  %-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -55,6 +55,7 @@ test-kind: ## Run Kubernetes connector acceptance in an ephemeral kind cluster
 acceptance-stage2: testbed-up testbed-smoke test lint build compose-config test-integration test-kind ## Run the complete stage-2 gate
 
 test-stage3-restart: ## Verify Python restart recovery with PostgreSQL checkpoints
+	@if ! timeout 1 bash -c 'true < /dev/tcp/127.0.0.1/5432' 2>/dev/null; then docker compose up -d --wait postgres; fi
 	cd services/investigation && uv run ../../scripts/verify-stage3.py
 
 test-stage4-postgres: ## Verify pgvector retrieval and durable SSE event replay
@@ -74,7 +75,7 @@ eval-offline: ## Run the 32-case frozen stage-6 replay and quality gate
 
 eval-online: ## Compare two prompts on 32 cases with the configured real model
 	mkdir -p artifacts
-	cd services/investigation && uv run ../../evals/run_stage6.py --mode online
+	cd services/investigation && uv run ../../evals/run_stage6.py --mode online --output ../../artifacts/stage6-online-report.json --markdown-output ../../artifacts/stage6-online-report.md
 
 eval-retrieval: ## Run the independent stage-4 Recall@K retrieval baseline
 	mkdir -p artifacts
@@ -90,6 +91,15 @@ test-stage5-kind: ## Verify approval binding, idempotency, and isolated mutation
 acceptance-stage5: test lint proto-check build compose-config test-stage5-kind ## Run the complete stage-5 gate
 
 acceptance-stage6: test lint proto-check build compose-config eval-offline ## Run the stage-6 deterministic gate
+
+verify-stage7: ## Generate the concurrency, degradation, resource, security, and quality report
+	mkdir -p artifacts
+	cd services/investigation && uv run ../../scripts/verify-stage7.py
+
+release-manifest: eval-offline ## Build an untagged release-candidate provenance manifest
+	uv run --project services/investigation python scripts/build-release-manifest.py --release v1.0.0-rc.1
+
+acceptance-stage7: acceptance-stage6 test-stage3-restart test-stage4-postgres eval-retrieval test-stage5-kind verify-stage7 release-manifest ## Run the complete deterministic V1 release-candidate gate
 
 build: ## Build all three services
 	cd services/investigation && uv build

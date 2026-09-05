@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    name: Validate and publish tagged release
+    runs-on: ubuntu-latest
+    env:
+      AI_SRE_MODEL_BASE_URL: ${{ secrets.AI_SRE_MODEL_BASE_URL }}
+      AI_SRE_MODEL_API_KEY: ${{ secrets.AI_SRE_MODEL_API_KEY }}
+      AI_SRE_MODEL_ID: ${{ vars.AI_SRE_MODEL_ID }}
+      AI_SRE_MODEL_INPUT_USD_PER_MILLION: ${{ vars.AI_SRE_MODEL_INPUT_USD_PER_MILLION }}
+      AI_SRE_MODEL_OUTPUT_USD_PER_MILLION: ${{ vars.AI_SRE_MODEL_OUTPUT_USD_PER_MILLION }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.12.9"
+          enable-cache: true
+      - run: uv sync --project services/investigation --frozen --all-groups
+      - name: Require release model configuration
+        run: >-
+          test -n "$AI_SRE_MODEL_BASE_URL" &&
+          test -n "$AI_SRE_MODEL_API_KEY" &&
+          test -n "$AI_SRE_MODEL_ID" &&
+          test -n "$AI_SRE_MODEL_INPUT_USD_PER_MILLION" &&
+          test -n "$AI_SRE_MODEL_OUTPUT_USD_PER_MILLION"
+      - run: make eval-offline
+      - run: make eval-online
+      - name: Build immutable release manifest
+        run: >-
+          python scripts/build-release-manifest.py
+          --release "$GITHUB_REF_NAME"
+          --online-report artifacts/stage6-online-report.json
+          --require-tag
+      - name: Package reports and provenance
+        run: >-
+          tar -czf "artifacts/ai-sre-copilot-${GITHUB_REF_NAME}.tar.gz"
+          artifacts/release-manifest.json
+          artifacts/stage6-report.json
+          artifacts/stage6-report.md
+          artifacts/stage6-online-report.json
+          artifacts/stage6-online-report.md
+      - name: Attest release bundle
+        uses: actions/attest@v4
+        with:
+          subject-path: artifacts/ai-sre-copilot-${{ github.ref_name }}.tar.gz
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME"
+          "artifacts/ai-sre-copilot-${GITHUB_REF_NAME}.tar.gz"
+          artifacts/release-manifest.json
+          --verify-tag
+          --generate-notes

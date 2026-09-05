@@ -234,11 +234,13 @@ def build_recording(
     arguments: dict[str, dict[str, Any]] = {
         "prometheus.query": {
             "promql": (
-                f'sum(rate(http_requests_total{{service="{case.service}",status=~"5.."}}[5m]))'
+                "sum(rate(testbed_http_server_requests_total{"
+                f'service_name="{case.service}",http_response_status_code=~"5.."'
+                "}[5m]))"
             )
         },
         "loki.query_range": {
-            "logql": f'{{service="{case.service}"}} |= "error"',
+            "logql": f'{{service_name="{case.service}"}} |= "error"',
             "start": start.isoformat(),
             "end": now.isoformat(),
             "limit": 100,
