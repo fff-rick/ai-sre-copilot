@@ -1,178 +1,165 @@
 # AI-SRE Copilot
 
-AI-SRE Copilot 是一个面向中小研发团队的智能故障调查与安全处置系统。它从告警出发，关联指标、日志、链路、Kubernetes 事件、发布记录和历史事故，输出带证据的根因假设、处置建议与复盘报告。
+> 一个以证据为中心、默认只读且由人工审批约束的 AI 故障调查与安全处置工作台。
 
-项目已完成阶段 0～7。系统具备可恢复的有界并发调查、混合知识检索、证据工作台、审批令牌
-约束的隔离处置闭环、32 用例质量门禁、资源与降级测试，以及可验证的发布来源绑定。V1 聚焦
-“调查正确、证据可查、安全可控”，不追求无人值守自愈。
+AI-SRE Copilot 面向希望把告警处理从“依赖个人经验”变成“可追溯工程流程”的研发与 SRE 团队。它接收告警，关联指标、日志、链路、Kubernetes 事件、发布记录和历史事故，产出带证据引用的根因假设、下一步验证建议与受控处置方案。
 
-## 核心原则
+本项目是一个可本地运行的参考实现与工程实验环境：包含 React 工作台、Python 调查服务、Go 可信工具网关、PostgreSQL/pgvector，以及可注入故障的可观测测试床。V1 已完成阶段 0–7 的功能与确定性质量门禁。
 
-- Evidence First：每条关键结论必须关联原始证据。
-- Read-only by Default：默认仅开放只读工具。
-- Human in the Loop：重启、扩缩容、回滚等变更必须人工审批。
-- Bounded Autonomy：使用显式状态机约束 Agent，而不是无边界自主循环。
-- Observable and Evaluable：每次模型、检索、工具调用和状态转换都可追踪、可回放、可评测。
-- Simple Before Scale：V1 不引入 Kafka、Temporal、Elasticsearch 或多 Agent 集群。
+## 为什么使用它？
 
-## 目标架构
+- **减少排障盲区**：将跨指标、日志、链路、发布和知识库的调查过程集中为一条可回放的时间线。
+- **让 AI 的结论可审计**：关键假设必须指向原始证据；模型输出不是事实，也不会直接获得执行权限。
+- **把安全控制内建到流程中**：工具默认只读；重启、扩缩容和回滚等变更需要审批、RBAC、幂等保护和完整审计。
+- **便于验证与二次开发**：附带八类故障场景、冻结评测集、API 契约和本地端到端验证命令。
+
+## 核心能力
+
+- 有界并发、可持久恢复的调查工作流（FastAPI + LangGraph）。
+- 基于 PostgreSQL/pgvector 的运行手册与历史事故混合检索。
+- 证据工作台：调查时间线、SSE 实时更新、根因 Top-3、证据详情和脱敏质量报告。
+- 可信工具网关：Prometheus、Loki、Tempo、Kubernetes 与 Git 连接器，gRPC 契约与审计边界。
+- 人工在环的隔离处置闭环：审批令牌、命名空间限制、幂等与 fail-closed 设计。
+- 可观测测试床：可注入错误率、延迟、CPU、内存、依赖、配置、连接池与发布回归等故障。
+
+## 架构
 
 ```text
 React / TypeScript Web
           |
           v
-Python Investigation Service
-FastAPI + LangGraph + RAG + Eval
+Python Investigation Service ── FastAPI · LangGraph · RAG · Eval
           |
           | gRPC
           v
-Go Tool Gateway
-RBAC + Audit + Prometheus/Loki/Tempo/Kubernetes/Git Connectors
+Go Tool Gateway ── RBAC · Audit · Prometheus · Loki · Tempo · Kubernetes · Git
           |
           v
 Observable Testbed
 ```
 
-## 工程文档
+## 快速开始
 
-1. [项目立项背景](docs/01-project-background.md)
-2. [项目目标](docs/02-project-goals.md)
-3. [技术栈与选型](docs/03-technology-stack.md)
-4. [架构设计](docs/04-architecture-design.md)
-5. [阶段性任务](docs/05-roadmap.md)
-6. [验收测试](docs/06-acceptance-tests.md)
-7. [工程基线](docs/07-engineering-baseline.md)
-8. [阶段 1 验收记录](docs/08-stage1-validation.md)
-9. [阶段 2 验收记录](docs/09-stage2-validation.md)
-10. [阶段 3 验收记录](docs/10-stage3-validation.md)
-11. [阶段 4 验收记录](docs/11-stage4-validation.md)
-12. [阶段 5 验收记录](docs/12-stage5-validation.md)
-13. [阶段 6 验收记录](docs/13-stage6-validation.md)
-14. [本地使用手册](docs/14-local-user-guide.md)
-15. [威胁模型](docs/15-threat-model.md)
-16. [V1 API 与部署手册](docs/16-api-and-deployment.md)
-17. [阶段 7 验收记录](docs/17-stage7-validation.md)
-18. [阶段 7 工程加固 ADR](docs/adr/0009-bounded-release-hardening.md)
+### 1. 准备环境
 
-## 当前可运行基线
-
-仓库已包含三个服务和 PostgreSQL + pgvector 本地环境：
-
-```text
-web/                       React + TypeScript 静态应用
-services/investigation/    FastAPI + LangGraph 调查工作流与持久恢复
-services/tool-gateway/     Go 可信工具网关与只读工具注册表
-proto/                     阶段 2 的版本化契约边界
-testbed/                   阶段 1 的可观测故障环境
-evals/                     阶段 6 的冻结评测集
-deploy/                    本地基础设施初始化
-```
-
-本地已安装 Python 3.14、Go 1.26、Node.js 24 和 pnpm 10 时：
+完整本地体验需要 Git、Docker Engine（含 Compose v2）、`curl`、`jq`，以及一个支持严格 JSON Schema 输出的 OpenAI-compatible Chat Completions 模型端点。运行源码测试、离线评测或知识导入还需要 `uv`、Go、Node.js 和 pnpm。
 
 ```bash
+git clone https://github.com/fff-rick/ai-sre-copilot.git
+cd ai-sre-copilot
 cp .env.example .env
-make bootstrap
-make lint
-make test
-make compose-up
 ```
 
-启动后可访问：
+编辑 `.env`，填入模型配置（不要提交该文件）：
 
-- Web：<http://localhost:5173>
-- Investigation 健康检查：<http://localhost:8000/health/ready>
-- Tool Gateway 健康检查：<http://localhost:8081/health/ready>
-- Tool Gateway gRPC：`localhost:9091`
-
-`make compose-down` 会停止服务但保留本地数据库卷和脱敏 Artifact。模型配置缺失时，健康检查仍可用于部署诊断，但创建调查返回 503，不会执行不可持久化或不可审计的降级流程。
-
-阶段 2 的完整本地门禁为：
-
-```bash
-make acceptance-stage2
+```dotenv
+AI_SRE_MODEL_BASE_URL=https://provider.example/v1
+AI_SRE_MODEL_API_KEY=replace-with-your-secret
+AI_SRE_MODEL_ID=replace-with-model-id
 ```
 
-其中常规 PR 使用 Fake client-go 验证 Kubernetes 契约；阶段验收另使用临时 kind 集群验证真实 API Server，结束后删除集群。
+### 2. 启动可演练环境
 
-阶段 3 的确定性门禁及真实模型冒烟评测为：
-
-```bash
-make acceptance-stage3
-
-AI_SRE_MODEL_BASE_URL=https://provider.example/v1 \
-AI_SRE_MODEL_API_KEY=... \
-AI_SRE_MODEL_ID=... \
-make eval-online
-```
-
-阶段 4 的知识导入、实际 pgvector、SSE/快照和 Web 工作台门禁为：
-
-```bash
-make acceptance-stage4
-
-# 使用线上 OpenAI-compatible embedding 服务导入知识目录
-AI_SRE_DATABASE_URL=postgresql://ai_sre:local-development-only@127.0.0.1:5432/ai_sre \
-AI_SRE_EMBEDDING_BASE_URL=https://provider.example/v1 \
-AI_SRE_EMBEDDING_API_KEY=... \
-AI_SRE_EMBEDDING_MODEL_ID=... \
-uv run --project services/investigation ai-sre-ingest knowledge/catalog.json
-```
-
-离线检索报告写入忽略提交的 `artifacts/stage4-retrieval.{json,md}`。当前基线明确暴露
-PostgreSQL `simple` 词法配置对无空格中文查询的不足，不把离线 Hash embedding 指标解释为
-线上语义模型质量。
-
-阶段 5 的审批、幂等和临时 kind 隔离变更门禁为：
-
-```bash
-make acceptance-stage5
-```
-
-变更只允许 `MUTATION_ALLOWED_NAMESPACE` 指定的测试命名空间。数据库或审批授权不可用时，网关关闭变更能力并拒绝产生无法审计的副作用。
-
-阶段 6 的 32 用例冻结回放、双 Prompt 对比和完整确定性门禁为：
+下面的命令会生成离线质量报告、启动故障测试床并启动 Copilot：
 
 ```bash
 make eval-offline
-make acceptance-stage6
-```
-
-报告写入忽略提交的 `artifacts/stage6-report.{json,md}`，失败用例关联 Trace ID、最终检查点
-和工具记录哈希。回放结果只验证评测管线；发布候选仍需通过 `make eval-online` 记录真实模型
-版本、Token 与价格。
-
-阶段 7 的完整 V1 发布候选门禁为：
-
-```bash
-make acceptance-stage7
-```
-
-该门禁覆盖五任务并发、单证据源故障降级、重启恢复、pgvector/SSE、隔离 kind 变更、容器
-资源/权限约束、敏感模式扫描、32 用例质量报告和发布清单。Web 已支持直接创建调查并查看脱敏
-质量报告。固定演示与录制命令见 [V1 演示手册](demo/README.md)。正式 `v*` 发布只允许在合并
-后的 Tag 上运行，并要求真实模型 32 用例在线报告通过。
-
-阶段 1 的可观测测试床使用独立 Compose 项目，避免拖慢日常工程基线：
-
-```bash
 make testbed-up
 make testbed-smoke
+make compose-up
 ```
 
-架构、故障注入和观测入口见 [Testbed 文档](testbed/README.md)。
+打开以下入口：
 
-## V1 交付定义
+| 服务 | 地址 |
+| --- | --- |
+| AI-SRE 工作台 | <http://localhost:5173> |
+| Investigation API / Swagger | <http://localhost:8000/docs> |
+| Tool Gateway health | <http://localhost:8081/health/ready> |
+| Grafana | <http://localhost:13000> |
+| Prometheus | <http://localhost:19090> |
 
-V1 完成时，系统应能在可重复的测试环境中：
+### 3. 注入故障并创建调查
 
-1. 接收告警并创建一次可持久化的调查任务。
-2. 调用至少 8 个只读工具收集多源证据。
-3. 输出根因 Top-3、置信度、证据引用和建议操作。
-4. 在中断或服务重启后恢复调查。
-5. 对危险操作执行审批、权限校验和完整审计。
-6. 使用不少于 30 个故障用例执行自动回归评测。
+在另一个终端注入支付服务错误率故障并制造请求：
 
-## 项目边界
+```bash
+./testbed/scripts/fault.sh inject errors-payment
 
-V1 不连接真实生产环境，不承诺自动修复全部故障，不以聊天机器人作为主要交互形式，也不将 LLM 输出直接视为事实或执行授权。
+for _ in 1 2 3 4 5; do
+  curl -sS -o /dev/null -X POST http://localhost:18080/checkout \
+    -H 'Content-Type: application/json' \
+    -d '{"sku":"widget-red","quantity":1,"amount_cents":1299}' || true
+done
+```
+
+然后访问工作台，填写服务 `payment`、严重度和摘要，点击“创建调查”。你将看到调查节点实时进入时间线，并在完成后查看根因假设、证据引用和建议操作。也可通过 Swagger 直接调用 API。
+
+体验结束后恢复服务：
+
+```bash
+./testbed/scripts/fault.sh recover payment
+make testbed-smoke
+make compose-down
+```
+
+> 未配置模型时，健康检查仍可用于部署诊断，但创建调查会返回 HTTP 503；系统不会降级为不可持久化、不可审计的模型调用。
+
+## 常用命令
+
+```bash
+make bootstrap          # 安装锁定的 Python 与 Web 依赖
+make lint               # 静态检查
+make test               # Python、Go、Web 与测试床单元测试
+make acceptance-stage7 # 完整 V1 确定性发布候选门禁
+make eval-offline       # 运行 32 个冻结用例的离线评测
+make compose-down       # 停止 Copilot，保留本地数据库卷
+```
+
+运行全部验收前，请确认 Docker、kind、uv、Go、Node.js 与 pnpm 已就绪。详细前置条件和排障步骤见[本地使用手册](docs/14-local-user-guide.md)。
+
+## 安全边界与适用范围
+
+- 这是面向本地开发、评估和受控集成的参考实现，**不要直接连接生产 Kubernetes 集群或生产凭据**。
+- 默认 Compose 没有 kubeconfig；涉及重启、扩缩容和回滚的工具会拒绝执行。这是预期的 fail-closed 行为。
+- 变更能力仅应在隔离的 kind 集群和 `MUTATION_ALLOWED_NAMESPACE` 指定的测试命名空间中验证。
+- 请始终把 `.env`、API Key、kubeconfig、生产日志和用户数据留在版本控制之外；提交前应执行密钥扫描。
+
+威胁模型、部署前置条件和安全设计详见[威胁模型](docs/15-threat-model.md)与[V1 API 与部署手册](docs/16-api-and-deployment.md)。
+
+## 项目结构
+
+```text
+web/                       React + TypeScript 工作台
+services/investigation/    FastAPI 调查工作流、RAG 与评测
+services/tool-gateway/     Go 可信工具网关
+testbed/                   可观测故障测试环境
+knowledge/                 示例服务知识、Runbook 与历史事故
+evals/                     冻结评测集与评测脚本
+proto/                     版本化 gRPC 契约
+docs/                      架构、ADR、验证记录和使用手册
+```
+
+## 文档
+
+- [本地使用手册](docs/14-local-user-guide.md)：从启动到完成一次调查的详细操作。
+- [架构设计](docs/04-architecture-design.md)：服务边界与关键数据流。
+- [验收测试](docs/06-acceptance-tests.md)：各阶段验收范围。
+- [工程基线](docs/07-engineering-baseline.md)：工具链、质量标准和约束。
+- [演示手册](demo/README.md)：固定演示与录制步骤。
+- [ADR](docs/adr/)：关键架构决策及其取舍。
+
+## 贡献
+
+欢迎通过 Issue 或 Pull Request 参与。提交前请运行与改动相符的检查，至少执行：
+
+```bash
+make lint
+make test
+```
+
+请勿提交任何密钥、真实生产数据、kubeconfig 或包含敏感信息的 Artifact。涉及工具权限、审批或数据访问的改动，请同时更新相应测试和威胁模型。
+
+## 许可证
+
+本项目采用 [MIT License](LICENSE)。
