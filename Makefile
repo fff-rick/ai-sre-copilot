@@ -2,7 +2,7 @@ SHELL := /bin/bash
 
 .DEFAULT_GOAL := help
 
-.PHONY: help bootstrap proto proto-check format lint test test-python test-go test-web test-testbed test-integration test-kind test-stage3-restart test-stage4-postgres test-stage5-kind eval-stage3-smoke eval-stage3-online eval-offline eval-online eval-retrieval verify-stage7 release-manifest acceptance-stage2 acceptance-stage3 acceptance-stage4 acceptance-stage5 acceptance-stage6 acceptance-stage7 build compose-up compose-down compose-config testbed-up testbed-down testbed-smoke testbed-validate clean
+.PHONY: help bootstrap proto proto-check format lint test test-python test-go test-web test-testbed test-integration test-kind test-stage3-restart test-stage4-postgres test-stage5-kind eval-stage3-smoke eval-stage3-online eval-offline eval-online eval-retrieval verify-stage7 release-manifest acceptance-stage2 acceptance-stage3 acceptance-stage4 acceptance-stage5 acceptance-stage6 acceptance-stage7 build compose-up compose-down compose-config testbed-up testbed-down testbed-smoke testbed-validate pd-demo pd-demo-down pd-demo-copilot-up pd-demo-copilot-down pd-demo-fault clean
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\n"} /^[a-zA-Z_-]+:.*?## / {printf "  %-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -128,6 +128,21 @@ testbed-smoke: ## Submit one successful end-to-end checkout
 
 testbed-validate: ## Inject, verify, and recover all eight stage-1 faults
 	./testbed/scripts/validate-scenarios.sh
+
+pd-demo: ## Start only the local Kubernetes production-like demo environment
+	./scripts/pd-demo.sh up
+
+pd-demo-down: ## Stop and delete only the local Kubernetes production-like demo
+	./scripts/pd-demo.sh down
+
+pd-demo-copilot-up: ## Start Copilot separately, connected to a running pd-demo
+	./scripts/pd-demo.sh copilot-up
+
+pd-demo-copilot-down: ## Stop only the Copilot stack connected to pd-demo
+	./scripts/pd-demo.sh copilot-down
+
+pd-demo-fault: ## Inject or recover a demo fault: make pd-demo-fault ARGS='inject errors-payment'
+	./scripts/pd-demo-fault.sh $(ARGS)
 
 clean: ## Remove generated local build outputs
 	rm -rf services/investigation/dist web/dist web/coverage services/tool-gateway/server
