@@ -55,11 +55,23 @@ function record(status = "COMPLETED") {
                 supporting_evidence_ids: [evidence.evidence_id],
                 contradicting_evidence_ids: [],
                 verification_status: "supported",
-                next_checks: [],
+                next_checks: ["Inspect slow database transactions."],
               },
             ],
             evidence: [evidence],
             evidence_gaps: [],
+            proposed_actions: [
+              {
+                action_id: "act-review-1",
+                description: "Review and reduce slow database transactions.",
+                target: "payment",
+                risk_level: "medium",
+                expected_effect: "Release blocked database connections.",
+                rollback_plan: "Restore the previous transaction limits.",
+                evidence_ids: [evidence.evidence_id],
+                requires_approval: true,
+              },
+            ],
             uncertainty: [],
             completed_at: "2026-09-03T10:00:10Z",
           }
@@ -207,7 +219,7 @@ describe("App", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders the persistent investigation, hypotheses, timeline and evidence drawer", async () => {
+  it("renders the alert conclusion, cited reasoning, advice and evidence drawer", async () => {
     installFetch();
     render(<App />);
 
@@ -215,22 +227,87 @@ describe("App", () => {
       await screen.findByText("Payment error rate increased"),
     ).toBeInTheDocument();
     expect(
-      await screen.findByText("Database connections are exhausted."),
+      (await screen.findAllByText("Database connections are exhausted."))
+        .length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByText("本次报警结论")).toBeInTheDocument();
+    expect(screen.getByText("AI 判断理由与引用证据")).toBeInTheDocument();
+    expect(screen.getByText("处置建议")).toBeInTheDocument();
+    expect(
+      screen.getByText("Inspect slow database transactions."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Review and reduce slow database transactions."),
     ).toBeInTheDocument();
     expect(screen.getByText("5 份证据")).toBeInTheDocument();
     expect(screen.getByText("历史记录")).toBeInTheDocument();
     expect(window.location.search).toContain("investigation=inv-stage4");
 
-    fireEvent.click(screen.getByRole("button", { name: evidence.evidence_id }));
+    fireEvent.click(
+      screen.getByRole("button", { name: new RegExp(evidence.evidence_id) }),
+    );
     expect(
       await screen.findByRole("dialog", { name: "证据详情" }),
     ).toBeInTheDocument();
-    expect(screen.getByText(evidence.content_excerpt)).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("dialog", { name: "证据详情" })).getByText(
+        evidence.content_excerpt,
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByText(/payment timeout/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭证据详情" }));
     expect(
       screen.queryByRole("dialog", { name: "证据详情" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("explains when model access prevents a root-cause report", async () => {
+    const completed = record();
+    const blocked = {
+      ...completed,
+      report: {
+        ...completed.report!,
+        hypotheses: [],
+        proposed_actions: [],
+        evidence_gaps: [
+          {
+            source_type: "model",
+            message: "model provider rejected the request",
+            error_code: "HTTP_403",
+            retryable: false,
+          },
+        ],
+        uncertainty: ["No model-generated hypothesis is available."],
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string | URL | Request) => {
+        const path = String(input);
+        if (path === "/api/v1/evaluations/latest") {
+          return jsonResponse(evaluation);
+        }
+        if (path.includes("/timeline")) return jsonResponse(timeline);
+        if (path.includes("/approvals")) return jsonResponse([]);
+        if (path === "/api/v1/investigations?limit=100") {
+          return jsonResponse({ items: [blocked] });
+        }
+        return jsonResponse(blocked);
+      }),
+    );
+
+    render(<App />);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("AI 根因分析未生成");
+    expect(alert).toHaveTextContent(
+      "模型访问被拒绝，请检查 API 密钥、权限或账户余额。",
+    );
+    expect(screen.getByText("生成失败")).toBeInTheDocument();
+    expect(
+      screen.getByText("根因尚未形成，暂不提供可能误导的处置建议。"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("AI 判断理由与引用证据")).not.toBeInTheDocument();
   });
 
   it("subscribes for active work and returns to the durable snapshot at completion", async () => {
@@ -239,7 +316,7 @@ describe("App", () => {
     render(<App />);
 
     expect(
-      await screen.findByText("调查正在进行，结论将在校验后写入。"),
+      await screen.findByText("正在采集指标、日志、链路和知识库证据，请稍候。"),
     ).toBeInTheDocument();
     await waitFor(() => expect(FakeEventSource.latest).not.toBeNull());
     expect(FakeEventSource.latest?.url).toContain("inv-stage4/events");
@@ -347,7 +424,7 @@ describe("App", () => {
       }),
     );
     render(<App />);
-    await screen.findByText("Database connections are exhausted.");
+    await screen.findAllByText("Database connections are exhausted.");
     fireEvent.change(screen.getByLabelText("动作"), {
       target: { value: "scale" },
     });
@@ -506,7 +583,7 @@ describe("App", () => {
     });
     fireEvent.click(list.getByRole("button", { name: /order-service/ }));
     expect(
-      await screen.findByText("调查正在进行，结论将在校验后写入。"),
+      await screen.findByText("正在采集指标、日志、链路和知识库证据，请稍候。"),
     ).toBeInTheDocument();
     expect(window.location.search).toContain("inv-order");
   });
@@ -514,7 +591,7 @@ describe("App", () => {
   it("retains the Chinese draft on cancel or failure and rejects whitespace-only input", async () => {
     installFetch();
     render(<App />);
-    await screen.findByText("Database connections are exhausted.");
+    await screen.findAllByText("Database connections are exhausted.");
     fireEvent.click(screen.getByRole("button", { name: /新建调查/ }));
     fireEvent.change(screen.getByLabelText("服务"), { target: { value: " " } });
     fireEvent.change(screen.getByLabelText("告警摘要"), {

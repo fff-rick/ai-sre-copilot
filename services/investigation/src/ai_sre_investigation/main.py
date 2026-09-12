@@ -2,9 +2,11 @@
 
 import asyncio
 import json
+import secrets
 import time
 from collections.abc import AsyncIterator, Awaitable
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request, status
@@ -12,8 +14,11 @@ from fastapi.responses import StreamingResponse
 
 from ai_sre_investigation import __version__
 from ai_sre_investigation.config import Settings, get_settings
+from ai_sre_investigation.domain import Alert, Severity, TimeWindow
 from ai_sre_investigation.evaluation_report import EvaluationReport, load_evaluation_report
 from ai_sre_investigation.models import (
+    AlertmanagerIngestResponse,
+    AlertmanagerWebhook,
     ApproveRequest,
     CancelResponse,
     CreateInvestigationRequest,
@@ -122,6 +127,61 @@ def create_app(
             )
         return await active_service.create(
             request.alert, budget=request.budget, model_profile=request.model_profile
+        )
+
+    @application.post(
+        "/api/v1/integrations/alertmanager",
+        response_model=AlertmanagerIngestResponse,
+        status_code=status.HTTP_202_ACCEPTED,
+        tags=["integrations"],
+    )
+    async def ingest_alertmanager(
+        webhook: AlertmanagerWebhook,
+        authorization: str | None = Header(default=None, alias="Authorization"),
+    ) -> AlertmanagerIngestResponse:
+        expected_token = active_settings.alertmanager_webhook_token
+        supplied_token = (
+            authorization.removeprefix("Bearer ")
+            if authorization and authorization.startswith("Bearer ")
+            else ""
+        )
+        if expected_token is None:
+            raise HTTPException(status_code=503, detail="Alertmanager integration is disabled")
+        if not secrets.compare_digest(supplied_token, expected_token):
+            raise HTTPException(status_code=401, detail="invalid Alertmanager webhook token")
+
+        active_service = _service(application, service)
+        investigation_ids: list[str] = []
+        for item in webhook.alerts:
+            if item.status != "firing":
+                continue
+            service_name = item.labels.get("service") or item.labels.get("job")
+            if not service_name:
+                raise HTTPException(status_code=422, detail="firing alert requires service label")
+            now = datetime.now(UTC)
+            window_start = max(item.starts_at, now - timedelta(minutes=15))
+            if window_start >= now:
+                window_start = now - timedelta(seconds=1)
+            alert = Alert(
+                alert_id=f"alertmanager:{item.fingerprint}",
+                service=service_name,
+                severity=(
+                    Severity(item.labels["severity"])
+                    if item.labels.get("severity") in Severity
+                    else Severity.INFO
+                ),
+                summary=item.annotations.get("summary", item.labels.get("alertname", "Alert")),
+                time_window=TimeWindow(start=window_start, end=now),
+                source_ref=item.generator_url or f"alertmanager://{item.fingerprint}",
+                labels=item.labels,
+            )
+            record = await active_service.create(
+                alert,
+                deduplication_key=f"alertmanager:{item.fingerprint}",
+            )
+            investigation_ids.append(record.investigation.investigation_id)
+        return AlertmanagerIngestResponse(
+            accepted=len(investigation_ids), investigation_ids=investigation_ids
         )
 
     @application.get(

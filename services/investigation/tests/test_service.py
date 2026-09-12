@@ -126,6 +126,46 @@ def test_investigation_api_create_get_cancel_and_not_found() -> None:
     asyncio.run(scenario())
 
 
+def test_alertmanager_webhook_is_authenticated_and_idempotent() -> None:
+    async def scenario() -> None:
+        service = make_service()
+        app = create_app(
+            Settings(environment="test", alertmanager_webhook_token="test-webhook-token"),
+            service,
+        )
+        now = datetime.now(UTC)
+        payload = {
+            "status": "firing",
+            "alerts": [
+                {
+                    "status": "firing",
+                    "labels": {
+                        "alertname": "LiveAPIErrorRateHigh",
+                        "service": "live-api",
+                        "severity": "warning",
+                    },
+                    "annotations": {"summary": "Live API error rate is elevated"},
+                    "startsAt": (now - timedelta(minutes=2)).isoformat(),
+                    "generatorURL": "http://prometheus/graph?g0.expr=live_http_requests_total",
+                    "fingerprint": "alert-fingerprint-1",
+                }
+            ],
+        }
+
+        unauthorized = await request(app, "POST", "/api/v1/integrations/alertmanager", payload)
+        assert unauthorized.status_code == 401
+
+        headers = {"Authorization": "Bearer test-webhook-token"}
+        first = await request(app, "POST", "/api/v1/integrations/alertmanager", payload, headers)
+        repeated = await request(app, "POST", "/api/v1/integrations/alertmanager", payload, headers)
+        assert first.status_code == 202
+        assert first.json() == repeated.json()
+        assert first.json()["accepted"] == 1
+        assert len(await service.list_investigations()) == 1
+
+    asyncio.run(scenario())
+
+
 def test_worker_completes_created_investigation() -> None:
     async def scenario() -> None:
         service = make_service()

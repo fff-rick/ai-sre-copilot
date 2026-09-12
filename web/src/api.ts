@@ -40,7 +40,22 @@ export interface InvestigationReport {
   impact_summary: string;
   hypotheses: Hypothesis[];
   evidence: Evidence[];
-  evidence_gaps: Array<{ source_type: string; message: string }>;
+  evidence_gaps: Array<{
+    source_type: string;
+    message: string;
+    error_code?: string;
+    retryable?: boolean;
+  }>;
+  proposed_actions?: Array<{
+    action_id: string;
+    description: string;
+    target: string;
+    risk_level: "low" | "medium" | "high";
+    expected_effect: string;
+    rollback_plan: string;
+    evidence_ids: string[];
+    requires_approval: boolean;
+  }>;
   uncertainty: string[];
   completed_at: string;
 }

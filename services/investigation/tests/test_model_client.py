@@ -88,6 +88,30 @@ def test_model_provider_errors_are_safe_and_typed() -> None:
     asyncio.run(scenario())
 
 
+def test_model_access_denial_explains_safe_operator_checks() -> None:
+    async def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, json={"secret_provider_detail": "do not expose"})
+
+    async def scenario() -> None:
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler), base_url="https://models.example/v1/"
+        ) as transport_client:
+            client = OpenAICompatibleModelClient(
+                base_url="https://models.example/v1",
+                api_key="secret",
+                model="configured-model",
+                client=transport_client,
+            )
+            with pytest.raises(ModelProviderError) as captured:
+                await client.complete(REQUEST)
+        assert captured.value.code == "HTTP_403"
+        assert not captured.value.retryable
+        assert "credentials, permissions, or balance" in str(captured.value)
+        assert "secret_provider_detail" not in str(captured.value)
+
+    asyncio.run(scenario())
+
+
 def test_adapter_retains_json_object_fallback_without_a_schema() -> None:
     async def handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)

@@ -1,0 +1,21 @@
+services:
+  investigation:
+    environment:
+      AI_SRE_TELEMETRY_PROFILE: live-platform
+      AI_SRE_MUTATION_ALLOWED_NAMESPACE: live-platform-read-only
+      AI_SRE_ALERTMANAGER_WEBHOOK_TOKEN: local-alertmanager-token
+    ports: !override
+      - "${LIVE_COPILOT_API_PORT:-18000}:8000"
+    volumes:
+      - ../live-platform:/live-platform:ro
+
+  tool-gateway:
+    environment:
+      PROMETHEUS_URL: http://host.docker.internal:${LIVE_PROMETHEUS_PORT:-19091}
+      TEMPO_URL: http://host.docker.internal:${LIVE_TEMPO_PORT:-3200}
+      LOKI_URL: http://host.docker.internal:${LIVE_LOKI_PORT:-13100}
+      GIT_REPOSITORY_PATH: /live-platform
+      RELEASE_EVENTS_FILE: /live-platform/reports/releases.jsonl
+      MUTATION_ALLOWED_NAMESPACE: live-platform-read-only
+    volumes:
+      - ../live-platform:/live-platform:ro

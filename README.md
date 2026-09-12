@@ -165,6 +165,7 @@ docs/                      架构、ADR、验证记录和使用手册
 - [工程基线](docs/07-engineering-baseline.md)：工具链、质量标准和约束。
 - [演示手册](demo/README.md)：固定演示与录制步骤。
 - [本地完整验收与生产准入指南](docs/18-local-full-acceptance-guide.md)：当前工作区中的全量验收说明。
+- [Live Platform 接入计划](docs/20-live-platform-integration.md)：只读遥测接入、后续告警与安全处置路线。
 - [ADR](docs/adr/)：关键架构决策及其取舍。
 
 ## 贡献
