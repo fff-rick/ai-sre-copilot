@@ -1,6 +1,7 @@
 """Application service and restartable investigation worker."""
 
 import asyncio
+import hashlib
 import secrets
 from contextlib import suppress
 from datetime import UTC, datetime
@@ -67,10 +68,15 @@ class InvestigationService:
         *,
         budget: InvestigationBudget | None = None,
         model_profile: str = "default",
+        deduplication_key: str | None = None,
     ) -> StoredInvestigation:
         now = datetime.now(UTC)
         investigation = Investigation(
-            investigation_id=f"inv-{uuid4()}",
+            investigation_id=(
+                f"inv-am-{hashlib.sha256(deduplication_key.encode()).hexdigest()[:32]}"
+                if deduplication_key
+                else f"inv-{uuid4()}"
+            ),
             trace_id=secrets.token_hex(8),
             alert=alert,
             budget=budget or InvestigationBudget(),
@@ -78,7 +84,15 @@ class InvestigationService:
             created_at=now,
             updated_at=now,
         )
-        await self.repository.create(investigation)
+        if deduplication_key:
+            created = await self.repository.create_if_absent(investigation)
+            if not created:
+                existing = await self.repository.get(investigation.investigation_id)
+                if existing is None:
+                    raise RuntimeError("deduplicated investigation could not be loaded")
+                return existing
+        else:
+            await self.repository.create(investigation)
         await self.repository.append_event(
             investigation.investigation_id,
             "investigation.created",

@@ -118,9 +118,12 @@ class InvestigationWorkflow:
         knowledge: KnowledgeRetriever | None = None,
         event_sink: EventSink = discard_event,
         prompt_version: str = PROMPT_VERSION,
+        telemetry_profile: str = "testbed",
     ) -> None:
         if prompt_version not in PROMPT_PROFILES:
             raise ValueError(f"unknown prompt version: {prompt_version}")
+        if telemetry_profile not in {"testbed", "live-platform"}:
+            raise ValueError(f"unknown telemetry profile: {telemetry_profile}")
         self._model = model
         self._tools = tools
         self._cancel_check = cancel_check
@@ -129,6 +132,7 @@ class InvestigationWorkflow:
         self._knowledge = knowledge
         self._event_sink = event_sink
         self._prompt_version = prompt_version
+        self._telemetry_profile = telemetry_profile
         graph = StateGraph(InvestigationState)
         # LangGraph's overloads do not express async closure nodes, although they are supported.
         graph.add_node("scope", cast(Any, self._observed("scope", self._scope)))
@@ -224,21 +228,27 @@ class InvestigationWorkflow:
         start = alert.time_window.start.isoformat()
         end = alert.time_window.end.isoformat()
         service = alert.service
+        if self._telemetry_profile == "live-platform":
+            error_rate_query = (
+                f'sum(rate(live_http_requests_total{{service="{service}",status=~"5.."}}[5m]))'
+            )
+            error_log_query = f'{{service_name="{service}"}} | json | level=~"(?i)error"'
+        else:
+            error_rate_query = (
+                "sum(rate(testbed_http_server_requests_total{"
+                f'service_name="{service}",http_response_status_code=~"5.."'
+                "}[5m]))"
+            )
+            error_log_query = f'{{service_name="{service}"}} |= "error"'
         plan = [
             {
                 "tool_name": "prometheus.query",
-                "arguments": {
-                    "promql": (
-                        "sum(rate(testbed_http_server_requests_total{"
-                        f'service_name="{service}",http_response_status_code=~"5.."'
-                        "}[5m]))"
-                    )
-                },
+                "arguments": {"promql": error_rate_query},
             },
             {
                 "tool_name": "loki.query_range",
                 "arguments": {
-                    "logql": f'{{service_name="{service}"}} |= "error"',
+                    "logql": error_log_query,
                     "start": start,
                     "end": end,
                     "limit": 100,

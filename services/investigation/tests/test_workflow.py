@@ -123,6 +123,26 @@ def test_fake_model_completes_full_evidence_backed_top_three_flow() -> None:
     assert len(tools.requests) == 4
 
 
+def test_live_platform_profile_uses_live_http_metrics() -> None:
+    tools = FakeToolClient(TOOL_RESPONSES)
+
+    run(
+        InvestigationWorkflow(
+            model=FakeModelClient(valid_hypotheses()),
+            tools=tools,
+            now=lambda: NOW,
+            telemetry_profile="live-platform",
+        )
+    )
+
+    assert tools.requests[0].arguments == {
+        "promql": ('sum(rate(live_http_requests_total{service="payment",status=~"5.."}[5m]))')
+    }
+    assert tools.requests[1].arguments["logql"] == (
+        '{service_name="payment"} | json | level=~"(?i)error"'
+    )
+
+
 def test_one_unavailable_source_becomes_an_explicit_gap() -> None:
     model_payload = valid_hypotheses()
     model_payload["hypotheses"][0]["supporting_evidence_ids"] = [

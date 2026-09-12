@@ -1,0 +1,41 @@
+Forwarding from 0.0.0.0:13200 -> 3200
+Handling connection for 13200
+I0908 11:35:37.482283   64704 log.go:245] (0xc0001664d0) (0xc000b51540) Create stream
+I0908 11:35:37.482331   64704 log.go:245] (0xc0001664d0) (0xc000b51540) Stream added, broadcasting: 1
+I0908 11:35:37.489147   64704 log.go:245] (0xc0001664d0) Reply frame received for 1
+I0908 11:35:37.489239   64704 log.go:245] (0xc000b51540) (1) Writing data frame
+I0908 11:35:37.489437   64704 log.go:245] (0xc0001664d0) (0xc000b5e5a0) Create stream
+I0908 11:35:37.489481   64704 log.go:245] (0xc0001664d0) (0xc000b5e5a0) Stream added, broadcasting: 3
+I0908 11:35:37.492522   64704 log.go:245] (0xc0001664d0) Reply frame received for 3
+I0908 11:35:37.493006   64704 log.go:245] (0xc000b5e5a0) (3) Writing data frame
+I0908 11:35:37.502340   64704 log.go:245] (0xc0001664d0) Data frame received for 3
+I0908 11:35:37.502411   64704 log.go:245] (0xc000b5e5a0) (3) Data frame handling
+I0908 11:35:37.502437   64704 log.go:245] (0xc000b5e5a0) (3) Data frame sent
+I0908 11:35:37.502599   64704 log.go:245] (0xc000b5e5a0) (3) Writing data frame
+I0908 11:35:37.504432   64704 log.go:245] (0xc0001664d0) Data frame received for 3
+I0908 11:35:37.504519   64704 log.go:245] (0xc000b5e5a0) (3) Data frame handling
+I0908 11:35:37.504533   64704 log.go:245] (0xc0001664d0) (0xc000b5e5a0) Stream removed, broadcasting: 3
+I0908 11:35:37.504547   64704 log.go:245] (0xc0001664d0) Data frame received for 1
+I0908 11:35:37.504566   64704 log.go:245] (0xc0001664d0) (0xc000b5e5a0) Stream removed, broadcasting: 3
+I0908 11:35:37.504583   64704 log.go:245] (0xc000b51540) (1) Data frame handling
+I0908 11:35:37.504638   64704 log.go:245] (0xc0001664d0) (0xc000b51540) Stream removed, broadcasting: 1
+Handling connection for 13200
+I0908 16:18:40.644015   64704 log.go:245] (0xc0001664d0) (0xc000b5e5a0) Create stream
+I0908 16:18:40.644852   64704 log.go:245] (0xc0001664d0) (0xc000b5e5a0) Stream added, broadcasting: 5
+I0908 16:18:40.666054   64704 log.go:245] (0xc0001664d0) Reply frame received for 5
+I0908 16:18:40.666379   64704 log.go:245] (0xc000b5e5a0) (5) Writing data frame
+I0908 16:18:40.666480   64704 log.go:245] (0xc0001664d0) (0xc000b50820) Create stream
+I0908 16:18:40.666734   64704 log.go:245] (0xc0001664d0) (0xc000b50820) Stream added, broadcasting: 7
+I0908 16:18:40.668816   64704 log.go:245] (0xc0001664d0) Reply frame received for 7
+I0908 16:18:40.669425   64704 log.go:245] (0xc000b50820) (7) Writing data frame
+I0908 16:18:40.921424   64704 log.go:245] (0xc0001664d0) Data frame received for 7
+I0908 16:18:40.922007   64704 log.go:245] (0xc000b50820) (7) Data frame handling
+I0908 16:18:40.922037   64704 log.go:245] (0xc000b50820) (7) Data frame sent
+I0908 16:20:10.919786   64704 log.go:245] (0xc000b50820) (7) Writing data frame
+I0908 16:20:10.921370   64704 log.go:245] (0xc0001664d0) Data frame received for 7
+I0908 16:20:10.921403   64704 log.go:245] (0xc000b50820) (7) Data frame handling
+I0908 16:20:10.921430   64704 log.go:245] (0xc0001664d0) Data frame received for 5
+I0908 16:20:10.921650   64704 log.go:245] (0xc0001664d0) (0xc000b50820) Stream removed, broadcasting: 7
+I0908 16:20:10.921690   64704 log.go:245] (0xc000b5e5a0) (5) Data frame handling
+I0908 16:20:10.921719   64704 log.go:245] (0xc0001664d0) (0xc000b50820) Stream removed, broadcasting: 7
+I0908 16:20:10.921794   64704 log.go:245] (0xc0001664d0) (0xc000b5e5a0) Stream removed, broadcasting: 5

@@ -50,6 +50,32 @@ function percent(value: number) {
   return `${(value * 100).toFixed(1)}%`;
 }
 
+function shortEvidence(value: string, limit = 180) {
+  return value.length <= limit ? value : `${value.slice(0, limit).trim()}…`;
+}
+
+function evidenceTitle(item: Evidence | undefined) {
+  const facts = item?.structured_facts;
+  if (facts && !Array.isArray(facts) && typeof facts.title === "string") {
+    return facts.title;
+  }
+  return item ? displayLabel(item.source_type) : "引用证据";
+}
+
+function evidenceGapMessage(gap: {
+  source_type: string;
+  message: string;
+  error_code?: string;
+}) {
+  if (
+    gap.source_type === "model" &&
+    (gap.error_code === "HTTP_401" || gap.error_code === "HTTP_403")
+  ) {
+    return "模型访问被拒绝，请检查 API 密钥、权限或账户余额。";
+  }
+  return gap.message;
+}
+
 function EvaluationDashboard({
   report,
   loadError,
@@ -619,91 +645,196 @@ export function App() {
                     </div>
                   </section>
 
-                  <div className="detail-grid">
-                    <section className="panel timeline-panel">
+                  <div className="report-grid">
+                    <section className="panel cause-panel">
                       <div className="panel-heading">
-                        <span>调查时间线</span>
-                        <b>{timeline.length}</b>
+                        <span>本次报警结论</span>
+                        <b>
+                          {selected.report
+                            ? selected.report.hypotheses.length
+                              ? "已生成"
+                              : "生成失败"
+                            : "分析中"}
+                        </b>
                       </div>
-                      <p className="section-note">时间均为北京时间（UTC+8）</p>
-                      <ol className="timeline">
-                        {timeline.map((event) => (
-                          <li key={event.event_id}>
-                            <span className="timeline-dot" aria-hidden="true" />
-                            <div>
-                              <strong>
-                                {event.payload.node
-                                  ? statusLabel(event.status)
-                                  : "收到告警"}
-                              </strong>
-                              <p title={event.event_type}>
-                                {displayLabel(event.event_type)}
-                              </p>
-                              <small>{displayTime(event.created_at)}</small>
-                            </div>
-                            {event.payload.evidence_count !== undefined && (
-                              <em>{event.payload.evidence_count} 份证据</em>
-                            )}
-                          </li>
-                        ))}
-                      </ol>
-                    </section>
-
-                    <section className="panel hypotheses-panel">
-                      <div className="panel-heading">
-                        <span>根因假设</span>
-                        <b>{selected.report?.hypotheses.length ?? 0}</b>
-                      </div>
-                      {selected.report?.hypotheses.map((hypothesis) => (
-                        <article
-                          className="hypothesis"
-                          key={hypothesis.hypothesis_id}
-                        >
-                          <div className="hypothesis-rank">
-                            {String(hypothesis.rank).padStart(2, "0")}
+                      <div className="report-content">
+                        <p className="impact-summary">
+                          {selected.report?.impact_summary ??
+                            selected.investigation.alert.summary}
+                        </p>
+                        {selected.report?.hypotheses[0] && (
+                          <div className="primary-cause">
+                            <span>AI 判断的最可能原因</span>
+                            <h3>{selected.report.hypotheses[0].statement}</h3>
+                            <p>
+                              {displayLabel(
+                                selected.report.hypotheses[0]
+                                  .verification_status,
+                              )}
+                              · 置信度
+                              {Math.round(
+                                selected.report.hypotheses[0].confidence * 100,
+                              )}
+                              %
+                            </p>
                           </div>
-                          <div className="hypothesis-body">
-                            <div className="confidence-row">
-                              <span>
-                                {displayLabel(hypothesis.verification_status)}
-                              </span>
-                              <strong>
-                                置信度 {Math.round(hypothesis.confidence * 100)}
-                                %
-                              </strong>
-                            </div>
-                            <div className="confidence-track">
-                              <i
-                                style={{
-                                  width: `${hypothesis.confidence * 100}%`,
-                                }}
-                              />
-                            </div>
-                            <h3>{hypothesis.statement}</h3>
-                            <div className="citations">
-                              {hypothesis.supporting_evidence_ids.map((id) => (
-                                <button
-                                  type="button"
-                                  aria-pressed={id === selectedId}
-                                  key={id}
-                                  onClick={() => void openEvidence(id)}
-                                >
-                                  {id}
-                                </button>
+                        )}
+                        {selected.report &&
+                          selected.report.hypotheses.length === 0 && (
+                            <div className="analysis-blocked" role="alert">
+                              <strong>AI 根因分析未生成</strong>
+                              <p>
+                                系统已采集 {selected.report.evidence.length}
+                                份证据，但模型分析没有成功，不能给出未经验证的原因。
+                              </p>
+                              {selected.report.evidence_gaps.map((gap) => (
+                                <p key={`${gap.source_type}-${gap.message}`}>
+                                  {displayLabel(gap.source_type)}：
+                                  {evidenceGapMessage(gap)}
+                                </p>
                               ))}
                             </div>
-                          </div>
-                        </article>
-                      ))}
-                      {!selected.report && (
+                          )}
+                        {!selected.report && (
+                          <p className="empty">
+                            正在采集指标、日志、链路和知识库证据，请稍候。
+                          </p>
+                        )}
+                      </div>
+                    </section>
+
+                    <section className="panel advice-panel">
+                      <div className="panel-heading">
+                        <span>处置建议</span>
+                        <b>
+                          {(selected.report?.hypotheses[0]?.next_checks
+                            .length ?? 0) +
+                            (selected.report?.proposed_actions?.length ?? 0)}
+                        </b>
+                      </div>
+                      {selected.report?.hypotheses[0] ? (
+                        <div className="advice-list">
+                          {selected.report.hypotheses[0].next_checks.map(
+                            (check, index) => (
+                              <article key={`${index}-${check}`}>
+                                <span>{index + 1}</span>
+                                <p>{check}</p>
+                              </article>
+                            ),
+                          )}
+                          {selected.report.proposed_actions?.map((action) => (
+                            <article key={action.action_id}>
+                              <span>→</span>
+                              <div>
+                                <strong>{action.description}</strong>
+                                <p>预期效果：{action.expected_effect}</p>
+                                <small>
+                                  {levelLabels[action.risk_level]}风险 ·
+                                  {action.requires_approval
+                                    ? "执行前需要审批"
+                                    : "无需审批"}
+                                </small>
+                              </div>
+                            </article>
+                          ))}
+                          {!selected.report.hypotheses[0].next_checks.length &&
+                            !selected.report.proposed_actions?.length && (
+                              <p className="empty">暂无可执行建议。</p>
+                            )}
+                        </div>
+                      ) : (
                         <p className="empty">
-                          调查正在进行，结论将在校验后写入。
+                          {selected.report
+                            ? "根因尚未形成，暂不提供可能误导的处置建议。"
+                            : "调查完成后将在这里给出排查和处置建议。"}
                         </p>
                       )}
                     </section>
                   </div>
 
-                  {selected.report && (
+                  {selected.report?.hypotheses.length ? (
+                    <section className="panel reasoning-panel">
+                      <div className="panel-heading">
+                        <span>AI 判断理由与引用证据</span>
+                        <b>{selected.report.hypotheses.length} 个判断</b>
+                      </div>
+                      {selected.report.hypotheses.map((hypothesis) => (
+                        <article
+                          className="reasoning-item"
+                          key={hypothesis.hypothesis_id}
+                        >
+                          <div className="reasoning-heading">
+                            <span>#{hypothesis.rank}</span>
+                            <div>
+                              <h3>{hypothesis.statement}</h3>
+                              <p>
+                                {displayLabel(hypothesis.verification_status)} ·
+                                置信度 {Math.round(hypothesis.confidence * 100)}
+                                %
+                              </p>
+                            </div>
+                          </div>
+                          <div className="cited-evidence">
+                            {hypothesis.supporting_evidence_ids.map((id) => {
+                              const item = evidenceById.get(id);
+                              return (
+                                <button
+                                  className="evidence-citation"
+                                  type="button"
+                                  key={id}
+                                  onClick={() => void openEvidence(id)}
+                                >
+                                  <span>
+                                    {displayLabel(
+                                      item?.source_type ?? "引用证据",
+                                    )}
+                                  </span>
+                                  <strong>{evidenceTitle(item)}</strong>
+                                  <p>
+                                    {item
+                                      ? shortEvidence(item.content_excerpt)
+                                      : "点击查看原始证据片段"}
+                                  </p>
+                                  <code>{id}</code>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </article>
+                      ))}
+                    </section>
+                  ) : null}
+
+                  <details className="panel timeline-panel timeline-disclosure">
+                    <summary>
+                      <span>查看调查过程</span>
+                      <b>{timeline.length} 个步骤</b>
+                    </summary>
+                    <p className="section-note">时间均为北京时间（UTC+8）</p>
+                    <ol className="timeline">
+                      {timeline.map((event) => (
+                        <li key={event.event_id}>
+                          <span className="timeline-dot" aria-hidden="true" />
+                          <div>
+                            <strong>
+                              {event.payload.node
+                                ? statusLabel(event.status)
+                                : "收到告警"}
+                            </strong>
+                            <p title={event.event_type}>
+                              {displayLabel(event.event_type)}
+                            </p>
+                            <small>{displayTime(event.created_at)}</small>
+                          </div>
+                          {event.payload.evidence_count !== undefined && (
+                            <em>{event.payload.evidence_count} 份证据</em>
+                          )}
+                        </li>
+                      ))}
+                    </ol>
+                  </details>
+
+                  {selected.report && selected.report.hypotheses.length > 0 && (
                     <section
                       className="panel remediation-panel"
                       aria-label="变更审批"

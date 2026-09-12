@@ -114,15 +114,32 @@ make test               # Python、Go、Web 与测试床单元测试
 make acceptance-stage7 # 完整 V1 确定性发布候选门禁
 make eval-offline       # 运行 32 个冻结用例的离线评测
 make compose-down       # 停止 Copilot，保留本地数据库卷
+make pd-demo            # 启动 Kubernetes 准生产演练环境并接入 Copilot
 ```
 
-运行全部验收前，请确认 Docker、kind、uv、Go、Node.js 与 pnpm 已就绪。详细前置条件和排障步骤见[本地使用手册](docs/14-local-user-guide.md)。
+### Kubernetes 准生产演练
+
+在已配置的 Kubernetes context 中安装 Docker、kubectl、curl 后，可启动一套隔离的演练环境：四个 HTTP 服务、PostgreSQL、OpenTelemetry Collector、Prometheus、Loki、Tempo 与 Grafana 均运行在 `pd-demo` 命名空间；Copilot 仍以本机 Compose 栈运行，并通过只读网关读取该环境的数据和 Kubernetes 状态。脚本会使用 `kubectl port-forward` 保持原有本机端口。
+
+```bash
+make pd-demo
+make pd-demo-copilot-up  # 可选：单独启动并连接 Copilot
+make pd-demo-fault ARGS='inject errors-payment'
+# 在 http://localhost:5173 为 payment 创建调查；随后用 API :18080 产生请求。
+make pd-demo-fault ARGS='recover payment'
+make pd-demo-copilot-down
+make pd-demo-down
+```
+
+`pd-demo` 与 Copilot 生命周期彼此独立：前者只创建/删除 `pd-demo` 命名空间中的业务与观测数据；`pd-demo-copilot-up`/`pd-demo-copilot-down` 只管理连接该环境的 Copilot Compose 栈。端口保持与普通测试床一致：业务 API `18080`、Grafana `13000`、Prometheus `19090`、Loki `13100`、Tempo `13200`。`pd-demo-down` 只会删除 `pd-demo` 命名空间及其数据；请使用专用的非生产 Kubernetes context，不能用于生产凭据或生产集群。
+
+运行全部验收前，请确认 Docker、kubectl、uv、Go、Node.js 与 pnpm 已就绪。详细前置条件和排障步骤见[本地使用手册](docs/14-local-user-guide.md)。
 
 ## 安全边界与适用范围
 
 - 这是面向本地开发、评估和受控集成的参考实现，**不要直接连接生产 Kubernetes 集群或生产凭据**。
 - 默认 Compose 没有 kubeconfig；涉及重启、扩缩容和回滚的工具会拒绝执行。这是预期的 fail-closed 行为。
-- 变更能力仅应在隔离的 kind 集群和 `MUTATION_ALLOWED_NAMESPACE` 指定的测试命名空间中验证。
+- 变更能力仅应在隔离的 Kubernetes 集群和 `MUTATION_ALLOWED_NAMESPACE` 指定的测试命名空间中验证。
 - 请始终把 `.env`、API Key、kubeconfig、生产日志和用户数据留在版本控制之外；提交前应执行密钥扫描。
 
 威胁模型、部署前置条件和安全设计详见[威胁模型](docs/15-threat-model.md)与[V1 API 与部署手册](docs/16-api-and-deployment.md)。
@@ -147,6 +164,8 @@ docs/                      架构、ADR、验证记录和使用手册
 - [验收测试](docs/06-acceptance-tests.md)：各阶段验收范围。
 - [工程基线](docs/07-engineering-baseline.md)：工具链、质量标准和约束。
 - [演示手册](demo/README.md)：固定演示与录制步骤。
+- [本地完整验收与生产准入指南](docs/18-local-full-acceptance-guide.md)：当前工作区中的全量验收说明。
+- [Live Platform 接入计划](docs/20-live-platform-integration.md)：只读遥测接入、后续告警与安全处置路线。
 - [ADR](docs/adr/)：关键架构决策及其取舍。
 
 ## 贡献

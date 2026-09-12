@@ -176,8 +176,9 @@ func (c jsonlReleaseConnector) ListReleases(ctx context.Context, service string,
 		if err != nil || occurredAt.Before(start) || occurredAt.After(end) || fmt.Sprint(event["target"]) != service {
 			continue
 		}
-		response, ok := event["response"].(map[string]any)
-		if !ok || (fmt.Sprint(response["type"]) != "release_regression" && fmt.Sprint(event["scenario"]) != "release-payment") {
+		response, _ := event["response"].(map[string]any)
+		isTestbedRelease := fmt.Sprint(response["type"]) == "release_regression" || fmt.Sprint(event["scenario"]) == "release-payment"
+		if fmt.Sprint(event["type"]) != "deployment" && !isTestbedRelease {
 			continue
 		}
 		result = append(result, event)

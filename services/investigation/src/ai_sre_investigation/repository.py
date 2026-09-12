@@ -37,6 +37,8 @@ class InvestigationEvent(FrozenModel):
 class InvestigationRepository(Protocol):
     async def create(self, investigation: Investigation) -> None: ...
 
+    async def create_if_absent(self, investigation: Investigation) -> bool: ...
+
     async def get(self, investigation_id: str) -> StoredInvestigation | None: ...
 
     async def list_investigations(
@@ -89,6 +91,15 @@ class InMemoryInvestigationRepository:
             self._records[investigation.investigation_id] = StoredInvestigation(
                 investigation=investigation, status=investigation.status
             )
+
+    async def create_if_absent(self, investigation: Investigation) -> bool:
+        async with self._lock:
+            if investigation.investigation_id in self._records:
+                return False
+            self._records[investigation.investigation_id] = StoredInvestigation(
+                investigation=investigation, status=investigation.status
+            )
+            return True
 
     async def get(self, investigation_id: str) -> StoredInvestigation | None:
         async with self._lock:
@@ -241,6 +252,23 @@ class PostgresInvestigationRepository:  # pragma: no cover - exercised by stage-
                     investigation.status,
                 ),
             )
+
+    async def create_if_absent(self, investigation: Investigation) -> bool:
+        async with self._pool.connection() as connection:
+            cursor = await connection.execute(
+                """
+                INSERT INTO investigations (investigation_id, investigation, status)
+                VALUES (%s, %s::jsonb, %s)
+                ON CONFLICT (investigation_id) DO NOTHING
+                RETURNING investigation_id
+                """,
+                (
+                    investigation.investigation_id,
+                    json.dumps(investigation.model_dump(mode="json")),
+                    investigation.status,
+                ),
+            )
+            return await cursor.fetchone() is not None
 
     async def get(self, investigation_id: str) -> StoredInvestigation | None:
         async with self._pool.connection() as connection:

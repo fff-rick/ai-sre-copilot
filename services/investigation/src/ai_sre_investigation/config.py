@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     embedding_timeout_seconds: float = Field(default=30, gt=0, le=300)
     evaluation_report_path: str = "artifacts/stage6-report.json"
     evaluation_report_max_bytes: int = Field(default=5 * 1024 * 1024, ge=1_024, le=20 * 1024 * 1024)
+    telemetry_profile: str = Field(default="testbed", pattern=r"^(testbed|live-platform)$")
+    alertmanager_webhook_token: str | None = Field(default=None, repr=False, min_length=16)
     mutation_allowed_namespace: str = "ai-sre-test"
     remediation_validation_delay_seconds: float = Field(default=2, ge=0, le=60)
 

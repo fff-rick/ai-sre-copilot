@@ -100,9 +100,14 @@ class OpenAICompatibleModelClient:
             retryable = (
                 error.response.status_code in {408, 409, 429} or error.response.status_code >= 500
             )
+            safe_message = (
+                "model provider denied access; check credentials, permissions, or balance"
+                if error.response.status_code in {401, 403}
+                else "model provider rejected the request"
+            )
             raise ModelProviderError(
                 f"HTTP_{error.response.status_code}",
-                "model provider rejected the request",
+                safe_message,
                 retryable,
             ) from error
         except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as error:

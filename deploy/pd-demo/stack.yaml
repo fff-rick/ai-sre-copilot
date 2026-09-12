@@ -1,0 +1,338 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pd-demo
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: pd-demo
+data:
+  001-init.sql: |
+    CREATE TABLE IF NOT EXISTS inventory (sku text PRIMARY KEY, available integer NOT NULL CHECK (available >= 0));
+    INSERT INTO inventory (sku, available) VALUES ('widget-blue', 1000), ('widget-red', 1000) ON CONFLICT (sku) DO UPDATE SET available = EXCLUDED.available;
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: database
+  namespace: pd-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: database}
+  template:
+    metadata:
+      labels: {app: database}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:18.6-alpine
+          ports: [{containerPort: 5432}]
+          env:
+            - {name: POSTGRES_DB, value: testbed}
+            - {name: POSTGRES_USER, value: testbed}
+            - {name: POSTGRES_PASSWORD, value: testbed-local-only}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/postgresql}
+            - {name: init, mountPath: /docker-entrypoint-initdb.d, readOnly: true}
+          readinessProbe: {exec: {command: [sh, -c, pg_isready -U testbed -d testbed]}, initialDelaySeconds: 3, periodSeconds: 3}
+          resources: {requests: {cpu: 100m, memory: 128Mi}, limits: {cpu: 500m, memory: 256Mi}}
+      volumes:
+        - {name: data, emptyDir: {}}
+        - {name: init, configMap: {name: postgres-init}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: database, namespace: pd-demo}
+spec: {selector: {app: database}, ports: [{port: 5432, targetPort: 5432}]}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: observability-config, namespace: pd-demo}
+data:
+  otel.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc: {endpoint: 0.0.0.0:4317}
+          http: {endpoint: 0.0.0.0:4318}
+      filelog/pods:
+        include: [/var/log/pods/pd-demo_*/*/*.log]
+        start_at: beginning
+        operators:
+          - type: container
+          - type: json_parser
+            parse_from: body
+    processors:
+      memory_limiter: {check_interval: 1s, limit_mib: 256, spike_limit_mib: 64}
+      batch: {timeout: 2s}
+    exporters:
+      otlphttp/tempo: {endpoint: http://tempo:4318}
+      otlphttp/loki: {endpoint: http://loki:3100/otlp}
+      prometheus: {endpoint: 0.0.0.0:8889, enable_open_metrics: true}
+    extensions:
+      health_check: {endpoint: 0.0.0.0:13133}
+    service:
+      extensions: [health_check]
+      pipelines:
+        traces: {receivers: [otlp], processors: [memory_limiter, batch], exporters: [otlphttp/tempo]}
+        metrics: {receivers: [otlp], processors: [memory_limiter, batch], exporters: [prometheus]}
+        logs: {receivers: [filelog/pods], processors: [memory_limiter, batch], exporters: [otlphttp/loki]}
+  prometheus.yaml: |
+    global: {scrape_interval: 5s, evaluation_interval: 5s}
+    scrape_configs:
+      - job_name: otel-collector
+        static_configs: [{targets: [otel-collector:8889]}]
+  loki.yaml: |
+    auth_enabled: false
+    server: {http_listen_port: 3100}
+    common:
+      path_prefix: /loki
+      replication_factor: 1
+      ring: {kvstore: {store: inmemory}}
+      storage: {filesystem: {chunks_directory: /loki/chunks, rules_directory: /loki/rules}}
+    schema_config:
+      configs: [{from: "2024-01-01", store: tsdb, object_store: filesystem, schema: v13, index: {prefix: index_, period: 24h}}]
+    limits_config: {allow_structured_metadata: true, volume_enabled: true}
+    analytics: {reporting_enabled: false}
+  tempo.yaml: |
+    server: {http_listen_port: 3200}
+    distributor: {receivers: {otlp: {protocols: {grpc: {endpoint: 0.0.0.0:4317}, http: {endpoint: 0.0.0.0:4318}}}}}
+    ingester: {max_block_duration: 5m}
+    compactor: {compaction: {block_retention: 24h}}
+    storage: {trace: {backend: local, wal: {path: /var/tempo/wal}, local: {path: /var/tempo/blocks}}}
+    usage_report: {reporting_enabled: false}
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - {name: Prometheus, type: prometheus, access: proxy, url: http://prometheus:9090, isDefault: true}
+      - {name: Loki, type: loki, access: proxy, url: http://loki:3100}
+      - {name: Tempo, type: tempo, access: proxy, url: http://tempo:3200}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: tempo, namespace: pd-demo}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: tempo}}
+  template:
+    metadata: {labels: {app: tempo}}
+    spec:
+      containers:
+        - name: tempo
+          image: grafana/tempo:2.10.7
+          args: ["-config.file=/etc/tempo/tempo.yaml"]
+          ports: [{containerPort: 3200}, {containerPort: 4318}]
+          volumeMounts: [{name: config, mountPath: /etc/tempo, readOnly: true}, {name: data, mountPath: /var/tempo}]
+      volumes: [{name: config, configMap: {name: observability-config}}, {name: data, emptyDir: {}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: tempo, namespace: pd-demo}
+spec: {type: NodePort, selector: {app: tempo}, ports: [{name: http, port: 3200, targetPort: 3200, nodePort: 30200}, {name: otlp-http, port: 4318, targetPort: 4318}]}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: loki, namespace: pd-demo}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: loki}}
+  template:
+    metadata: {labels: {app: loki}}
+    spec:
+      containers:
+        - name: loki
+          image: grafana/loki:3.7.4
+          args: ["-config.file=/etc/loki/loki.yaml"]
+          ports: [{containerPort: 3100}]
+          volumeMounts: [{name: config, mountPath: /etc/loki, readOnly: true}, {name: data, mountPath: /loki}]
+      volumes: [{name: config, configMap: {name: observability-config}}, {name: data, emptyDir: {}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: loki, namespace: pd-demo}
+spec: {type: NodePort, selector: {app: loki}, ports: [{port: 3100, targetPort: 3100, nodePort: 30100}]}
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: {name: otel-collector, namespace: pd-demo}
+spec:
+  selector: {matchLabels: {app: otel-collector}}
+  template:
+    metadata: {labels: {app: otel-collector}}
+    spec:
+      containers:
+        - name: collector
+          image: otel/opentelemetry-collector-contrib:0.153.0
+          args: ["--config=/etc/otel/otel.yaml"]
+          ports: [{containerPort: 4318}, {containerPort: 8889}, {containerPort: 13133}]
+          volumeMounts: [{name: config, mountPath: /etc/otel, readOnly: true}, {name: podlogs, mountPath: /var/log/pods, readOnly: true}]
+      volumes: [{name: config, configMap: {name: observability-config}}, {name: podlogs, hostPath: {path: /var/log/pods}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: otel-collector, namespace: pd-demo}
+spec: {selector: {app: otel-collector}, ports: [{name: otlp-http, port: 4318, targetPort: 4318}, {name: metrics, port: 8889, targetPort: 8889}]}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: prometheus, namespace: pd-demo}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: prometheus}}
+  template:
+    metadata: {labels: {app: prometheus}}
+    spec:
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v3.14.0
+          args: ["--config.file=/etc/prometheus/prometheus.yaml", "--storage.tsdb.path=/prometheus"]
+          ports: [{containerPort: 9090}]
+          volumeMounts: [{name: config, mountPath: /etc/prometheus, readOnly: true}, {name: data, mountPath: /prometheus}]
+      volumes: [{name: config, configMap: {name: observability-config}}, {name: data, emptyDir: {}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: prometheus, namespace: pd-demo}
+spec: {type: NodePort, selector: {app: prometheus}, ports: [{port: 9090, targetPort: 9090, nodePort: 30090}]}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: grafana, namespace: pd-demo}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: grafana}}
+  template:
+    metadata: {labels: {app: grafana}}
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:13.1.0
+          env: [{name: GF_AUTH_ANONYMOUS_ENABLED, value: "true"}, {name: GF_AUTH_ANONYMOUS_ORG_ROLE, value: Admin}, {name: GF_AUTH_DISABLE_LOGIN_FORM, value: "true"}]
+          ports: [{containerPort: 3000}]
+          volumeMounts: [{name: datasources, mountPath: /etc/grafana/provisioning/datasources, readOnly: true}]
+      volumes:
+        - name: datasources
+          configMap:
+            name: observability-config
+            items: [{key: datasources.yaml, path: datasources.yaml}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: grafana, namespace: pd-demo}
+spec: {type: NodePort, selector: {app: grafana}, ports: [{port: 3000, targetPort: 3000, nodePort: 30000}]}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: api, namespace: pd-demo}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: api}}
+  template:
+    metadata: {labels: {app: api}}
+    spec:
+      containers:
+        -
+          name: api
+          image: ai-sre-pd-testbed:local
+          imagePullPolicy: Never
+          ports: [{containerPort: 8080}]
+          env:
+            - {name: SERVICE_NAME, value: api}
+            - {name: ORDER_URL, value: http://order:8080}
+            - {name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://otel-collector:4318}
+            - {name: OTEL_EXPORTER_OTLP_PROTOCOL, value: http/protobuf}
+            - {name: OTEL_METRIC_EXPORT_INTERVAL, value: "5000"}
+          readinessProbe: {httpGet: {path: /health/ready, port: 8080}, initialDelaySeconds: 2, periodSeconds: 3}
+          resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {cpu: 500m, memory: 192Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: api, namespace: pd-demo}
+spec: {type: NodePort, selector: {app: api}, ports: [{port: 8080, targetPort: 8080, nodePort: 30080}]}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: order, namespace: pd-demo}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: order}}
+  template:
+    metadata: {labels: {app: order}}
+    spec:
+      containers:
+        - name: order
+          image: ai-sre-pd-testbed:local
+          imagePullPolicy: Never
+          ports: [{containerPort: 8080}]
+          env:
+            - {name: SERVICE_NAME, value: order}
+            - {name: INVENTORY_URL, value: http://inventory:8080}
+            - {name: PAYMENT_URL, value: http://payment:8080}
+            - {name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://otel-collector:4318}
+            - {name: OTEL_EXPORTER_OTLP_PROTOCOL, value: http/protobuf}
+            - {name: OTEL_METRIC_EXPORT_INTERVAL, value: "5000"}
+          readinessProbe: {httpGet: {path: /health/ready, port: 8080}, initialDelaySeconds: 2, periodSeconds: 3}
+          resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {cpu: 500m, memory: 192Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: order, namespace: pd-demo}
+spec: {selector: {app: order}, ports: [{port: 8080, targetPort: 8080}]}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: inventory, namespace: pd-demo}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: inventory}}
+  template:
+    metadata: {labels: {app: inventory}}
+    spec:
+      containers:
+        - name: inventory
+          image: ai-sre-pd-testbed:local
+          imagePullPolicy: Never
+          ports: [{containerPort: 8080}]
+          env:
+            - {name: SERVICE_NAME, value: inventory}
+            - {name: DATABASE_URL, value: "postgresql://testbed:testbed-local-only@database:5432/testbed?pool_max_conns=2&pool_min_conns=2"}
+            - {name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://otel-collector:4318}
+            - {name: OTEL_EXPORTER_OTLP_PROTOCOL, value: http/protobuf}
+            - {name: OTEL_METRIC_EXPORT_INTERVAL, value: "5000"}
+          readinessProbe: {httpGet: {path: /health/ready, port: 8080}, initialDelaySeconds: 2, periodSeconds: 3}
+          resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {cpu: 500m, memory: 192Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: inventory, namespace: pd-demo}
+spec: {selector: {app: inventory}, ports: [{port: 8080, targetPort: 8080}]}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: payment, namespace: pd-demo}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: payment}}
+  template:
+    metadata: {labels: {app: payment}}
+    spec:
+      containers:
+        - name: payment
+          image: ai-sre-pd-testbed:local
+          imagePullPolicy: Never
+          ports: [{containerPort: 8080}]
+          env:
+            - {name: SERVICE_NAME, value: payment}
+            - {name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://otel-collector:4318}
+            - {name: OTEL_EXPORTER_OTLP_PROTOCOL, value: http/protobuf}
+            - {name: OTEL_METRIC_EXPORT_INTERVAL, value: "5000"}
+          readinessProbe: {httpGet: {path: /health/ready, port: 8080}, initialDelaySeconds: 2, periodSeconds: 3}
+          resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {cpu: 500m, memory: 192Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: payment, namespace: pd-demo}
+spec: {selector: {app: payment}, ports: [{port: 8080, targetPort: 8080}]}

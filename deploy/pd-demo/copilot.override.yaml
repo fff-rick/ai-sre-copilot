@@ -1,0 +1,7 @@
+services:
+  tool-gateway:
+    environment:
+      KUBECONFIG: /pd-demo/kubeconfig.gateway
+      MUTATION_ALLOWED_NAMESPACE: pd-demo
+    volumes:
+      - ./.pd-demo:/pd-demo:ro

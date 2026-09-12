@@ -79,6 +79,7 @@ async def production_service(  # pragma: no cover - exercised by compose accepta
             cancel_check=repository.is_cancel_requested,
             knowledge=knowledge,
             event_sink=repository.append_event,
+            telemetry_profile=settings.telemetry_profile,
         )
         remediation = RemediationService(
             investigations=repository,
